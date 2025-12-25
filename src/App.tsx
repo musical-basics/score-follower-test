@@ -7,22 +7,27 @@ interface Anchor {
   time: number
 }
 
+export type AppMode = 'RECORD' | 'PLAYBACK'
+
 // Measure 1 always starts at 0:00
 const INITIAL_ANCHORS: Anchor[] = [{ measure: 1, time: 0 }]
 
 function App() {
   const [anchors, setAnchors] = useState<Anchor[]>(INITIAL_ANCHORS)
-  const [audioTime, setAudioTime] = useState(0)
+  const [mode, setMode] = useState<AppMode>('RECORD')
   const audioRef = useRef<HTMLAudioElement>(null)
   const anchorListRef = useRef<HTMLDivElement>(null)
 
   const handleTap = useCallback(() => {
+    // Only allow tapping in RECORD mode
+    if (mode !== 'RECORD') return
+
     if (audioRef.current) {
       const currentTime = audioRef.current.currentTime
       // Next measure number is current length + 1 (since we start with Measure 1)
       setAnchors(prev => [...prev, { measure: prev.length + 1, time: currentTime }])
     }
-  }, [])
+  }, [mode])
 
   // Reset anchors to start fresh (but keep Measure 1 at 0)
   const handleReset = useCallback(() => {
@@ -31,32 +36,28 @@ function App() {
 
   // Update a specific anchor's time (except Measure 1 which must stay at 0)
   const handleAnchorUpdate = useCallback((index: number, newTime: number) => {
-    // Prevent editing Measure 1 (index 0)
-    if (index === 0) return
+    // Prevent editing Measure 1 (index 0) or editing in PLAYBACK mode
+    if (index === 0 || mode !== 'RECORD') return
 
     setAnchors(prev => prev.map((anchor, i) =>
       i === index ? { ...anchor, time: newTime } : anchor
     ))
+  }, [mode])
+
+  // Toggle between RECORD and PLAYBACK modes
+  const toggleMode = useCallback(() => {
+    setMode(prev => prev === 'RECORD' ? 'PLAYBACK' : 'RECORD')
   }, [])
 
-  // Track audio time for cursor sync
-  const handleTimeUpdate = useCallback(() => {
-    if (audioRef.current) {
-      setAudioTime(audioRef.current.currentTime)
-    }
-  }, [])
-
-  // Auto-reset when audio is seeked to beginning
+  // Auto-reset when audio is seeked to beginning (only in RECORD mode)
   const handleSeeked = useCallback(() => {
-    if (audioRef.current && audioRef.current.currentTime === 0 && anchors.length > 1) {
+    if (mode === 'RECORD' && audioRef.current && audioRef.current.currentTime === 0 && anchors.length > 1) {
       handleReset()
     }
-  }, [anchors.length, handleReset])
+  }, [anchors.length, handleReset, mode])
 
   const handleEnded = useCallback(() => {
-    // Optionally reset when audio ends - user can start fresh on replay
-    // Uncomment below to auto-reset on end:
-    // handleReset()
+    // Optionally reset when audio ends
   }, [])
 
   // Auto-scroll to newest anchor
@@ -82,8 +83,19 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-white">
       {/* Top Header */}
-      <header className="bg-slate-800 text-white py-4 px-6 shadow-lg">
+      <header className="bg-slate-800 text-white py-4 px-6 shadow-lg flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-wide">Score Follower</h1>
+
+        {/* Mode Toggle Button */}
+        <button
+          onClick={toggleMode}
+          className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${mode === 'RECORD'
+              ? 'bg-red-500 hover:bg-red-600 text-white'
+              : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+            }`}
+        >
+          {mode === 'RECORD' ? '🔴 RECORD Mode' : '▶️ PLAYBACK Mode'}
+        </button>
       </header>
 
       {/* Main Content Area */}
@@ -93,7 +105,11 @@ function App() {
           id="score-container"
           className="flex-grow bg-gray-100 overflow-auto"
         >
-          <ScoreViewer audioTime={audioTime} anchors={anchors} />
+          <ScoreViewer
+            audioRef={audioRef}
+            anchors={anchors}
+            mode={mode}
+          />
         </main>
 
         {/* Right Sidebar - Sync Anchors */}
@@ -107,6 +123,7 @@ function App() {
           >
             {anchors.map((anchor, index) => {
               const isMeasureOne = index === 0
+              const isEditable = !isMeasureOne && mode === 'RECORD'
               return (
                 <div
                   key={index}
@@ -117,10 +134,10 @@ function App() {
                 >
                   <span className="font-medium">Measure {anchor.measure}:</span>
                   <div className="flex items-center gap-1">
-                    {isMeasureOne ? (
-                      // Measure 1 is locked at 0.00s
+                    {!isEditable ? (
+                      // Locked display
                       <span className="w-20 px-2 py-1 text-right font-mono text-gray-400">
-                        0.00
+                        {anchor.time.toFixed(2)}
                       </span>
                     ) : (
                       <input
@@ -154,7 +171,6 @@ function App() {
           controls
           className="flex-grow h-10"
           src="/c-major-exercise.mp3"
-          onTimeUpdate={handleTimeUpdate}
           onSeeked={handleSeeked}
           onEnded={handleEnded}
         >
@@ -164,7 +180,11 @@ function App() {
         {/* Clear/Reset Button */}
         <button
           onClick={handleReset}
-          className="bg-gray-600 hover:bg-gray-700 active:bg-gray-800 text-white font-semibold px-6 py-4 rounded-lg shadow-lg transition-all duration-150"
+          disabled={mode !== 'RECORD'}
+          className={`font-semibold px-6 py-4 rounded-lg shadow-lg transition-all duration-150 ${mode === 'RECORD'
+              ? 'bg-gray-600 hover:bg-gray-700 active:bg-gray-800 text-white'
+              : 'bg-gray-400 text-gray-200 cursor-not-allowed opacity-50'
+            }`}
         >
           Clear
         </button>
@@ -172,7 +192,11 @@ function App() {
         {/* TAP Button */}
         <button
           onClick={handleTap}
-          className="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xl px-10 py-4 rounded-lg shadow-lg transition-all duration-150 hover:scale-105 active:scale-95"
+          disabled={mode !== 'RECORD'}
+          className={`font-bold text-xl px-10 py-4 rounded-lg shadow-lg transition-all duration-150 ${mode === 'RECORD'
+              ? 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white hover:scale-105 active:scale-95'
+              : 'bg-gray-400 text-gray-200 cursor-not-allowed opacity-50'
+            }`}
         >
           TAP
         </button>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { OpenSheetMusicDisplay as OSMD } from 'opensheetmusicdisplay'
+import type { AppMode } from '../App'
 
 interface Anchor {
     measure: number
@@ -7,16 +8,18 @@ interface Anchor {
 }
 
 interface ScoreViewerProps {
-    audioTime: number
+    audioRef: React.RefObject<HTMLAudioElement | null>
     anchors: Anchor[]
+    mode: AppMode
     musicXmlUrl?: string
 }
 
-export function ScoreViewer({ audioTime, anchors, musicXmlUrl }: ScoreViewerProps) {
+export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const osmdRef = useRef<OSMD | null>(null)
     const [isLoaded, setIsLoaded] = useState(false)
+    const animationFrameRef = useRef<number | null>(null)
 
     // Initialize OSMD
     useEffect(() => {
@@ -41,8 +44,6 @@ export function ScoreViewer({ audioTime, anchors, musicXmlUrl }: ScoreViewerProp
         osmd.load(xmlUrl).then(() => {
             osmd.render()
             setIsLoaded(true)
-            console.log('OSMD loaded successfully')
-            console.log('MeasureList length:', osmd.GraphicSheet?.MeasureList?.length)
         }).catch((err) => {
             console.error('Failed to load MusicXML:', err)
         })
@@ -95,13 +96,17 @@ export function ScoreViewer({ audioTime, anchors, musicXmlUrl }: ScoreViewerProp
         return { measure: currentMeasure, progress }
     }, [anchors])
 
-    // Update cursor position based on audio time
-    useEffect(() => {
+    // Update cursor position - called from requestAnimationFrame
+    const updateCursorPosition = useCallback((audioTime: number) => {
         const osmd = osmdRef.current
         if (!osmd || !isLoaded || !cursorRef.current) return
         if (!osmd.GraphicSheet) return
 
         const { measure, progress } = findCurrentMeasure(audioTime)
+
+        // In RECORD mode: snap to measure start (progress = 0)
+        // In PLAYBACK mode: use interpolated progress
+        const effectiveProgress = mode === 'RECORD' ? 0 : progress
 
         // Convert to 0-index for OSMD
         const currentMeasureIndex = measure - 1
@@ -109,39 +114,17 @@ export function ScoreViewer({ audioTime, anchors, musicXmlUrl }: ScoreViewerProp
         try {
             const measureList = osmd.GraphicSheet.MeasureList
 
-            if (!measureList || measureList.length === 0) {
-                console.log('No measures in MeasureList')
-                return
-            }
-
-            if (currentMeasureIndex >= measureList.length) {
-                console.log('Measure index out of bounds:', currentMeasureIndex, 'max:', measureList.length - 1)
-                return
-            }
+            if (!measureList || measureList.length === 0) return
+            if (currentMeasureIndex >= measureList.length) return
 
             const measureStaves = measureList[currentMeasureIndex]
+            if (!measureStaves || measureStaves.length === 0) return
 
-            if (!measureStaves || measureStaves.length === 0) {
-                console.log('No staves for measure:', currentMeasureIndex)
-                return
-            }
-
-            // Get the first staff measure
             const staffMeasure = measureStaves[0]
+            if (!staffMeasure) return
 
-            if (!staffMeasure) {
-                console.log('No staff measure found')
-                return
-            }
-
-            // Try to access the bounding box/position data
-            // OSMD stores graphical data in PositionAndShape
             const positionAndShape = staffMeasure.PositionAndShape
-
-            if (!positionAndShape) {
-                console.log('No PositionAndShape for measure')
-                return
-            }
+            if (!positionAndShape) return
 
             // OSMD uses internal units - typically multiplied by 10 for pixels
             const unitInPixels = 10
@@ -152,7 +135,7 @@ export function ScoreViewer({ audioTime, anchors, musicXmlUrl }: ScoreViewerProp
             const height = (positionAndShape.BorderBottom - positionAndShape.BorderTop) * unitInPixels
 
             // Apply interpolation for smooth movement within the measure
-            const finalX = absoluteX + (width * progress)
+            const finalX = absoluteX + (width * effectiveProgress)
 
             // Update the cursor div
             cursorRef.current.style.left = `${finalX}px`
@@ -160,10 +143,38 @@ export function ScoreViewer({ audioTime, anchors, musicXmlUrl }: ScoreViewerProp
             cursorRef.current.style.height = `${Math.max(height, 80)}px`
             cursorRef.current.style.display = 'block'
 
+            // Update cursor color based on mode
+            cursorRef.current.style.backgroundColor = mode === 'RECORD'
+                ? 'rgba(255, 0, 0, 0.8)'  // Red for RECORD
+                : 'rgba(16, 185, 129, 0.8)' // Green (#10B981) for PLAYBACK
+            cursorRef.current.style.boxShadow = mode === 'RECORD'
+                ? '0 0 8px rgba(255, 0, 0, 0.5)'
+                : '0 0 8px rgba(16, 185, 129, 0.5)'
+
         } catch (err) {
             console.error('Error positioning cursor:', err)
         }
-    }, [audioTime, findCurrentMeasure, isLoaded])
+    }, [findCurrentMeasure, isLoaded, mode])
+
+    // requestAnimationFrame loop for smooth cursor updates
+    useEffect(() => {
+        if (!isLoaded) return
+
+        const animate = () => {
+            const audioTime = audioRef.current?.currentTime ?? 0
+            updateCursorPosition(audioTime)
+            animationFrameRef.current = requestAnimationFrame(animate)
+        }
+
+        // Start the animation loop
+        animationFrameRef.current = requestAnimationFrame(animate)
+
+        return () => {
+            if (animationFrameRef.current !== null) {
+                cancelAnimationFrame(animationFrameRef.current)
+            }
+        }
+    }, [isLoaded, updateCursorPosition, audioRef])
 
     return (
         <div className="relative w-full h-full overflow-auto bg-white">
@@ -183,11 +194,11 @@ export function ScoreViewer({ audioTime, anchors, musicXmlUrl }: ScoreViewerProp
                     top: 0,
                     width: '3px',
                     height: '100px',
-                    backgroundColor: 'rgba(255, 0, 0, 0.8)',
-                    boxShadow: '0 0 8px rgba(255, 0, 0, 0.5)',
+                    backgroundColor: mode === 'RECORD' ? 'rgba(255, 0, 0, 0.8)' : 'rgba(16, 185, 129, 0.8)',
+                    boxShadow: mode === 'RECORD' ? '0 0 8px rgba(255, 0, 0, 0.5)' : '0 0 8px rgba(16, 185, 129, 0.5)',
                     zIndex: 1000,
                     display: 'none',
-                    transition: 'left 0.05s linear',
+                    transition: mode === 'PLAYBACK' ? 'left 0.05s linear' : 'none',
                 }}
             />
         </div>
