@@ -14,12 +14,101 @@ interface ScoreViewerProps {
     musicXmlUrl?: string
 }
 
+type NoteData = {
+    id: string
+    measureIndex: number // 1-based to match anchors
+    timestamp: number // 0.0 to 1.0 relative to measure
+    element: Element | null
+}
+
 export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const osmdRef = useRef<OSMD | null>(null)
     const [isLoaded, setIsLoaded] = useState(false)
     const animationFrameRef = useRef<number | null>(null)
+
+    // Master Time Grid: Cache note data for fast lookup
+    // Key: Measure Index (1-based), Value: Array of notes in that measure
+    const noteMap = useRef<Map<number, NoteData[]>>(new Map())
+
+    // Helper to calculate the Master Time Grid
+    const calculateNoteMap = useCallback(() => {
+        const osmd = osmdRef.current
+        if (!osmd || !osmd.GraphicSheet) return
+
+        console.log('[ScoreViewer] Calculating Master Time Grid...')
+        const newNoteMap = new Map<number, NoteData[]>()
+        const measureList = osmd.GraphicSheet.MeasureList
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const unitInPixels = (osmd.GraphicSheet as any).UnitInPixels || 10
+
+        measureList.forEach((measureStaves, measureIndex) => {
+            const measureNumber = measureIndex + 1 // 1-based measure number
+            const measureNotes: NoteData[] = []
+
+            if (!measureStaves || measureStaves.length === 0) return
+            const staffMeasure = measureStaves[0]
+            if (!staffMeasure) return
+
+            const measurePos = staffMeasure.PositionAndShape
+            const measureWidth = (measurePos.BorderRight - measurePos.BorderLeft) * unitInPixels
+
+            // Iterate through all staff entries (notes/chords)
+            staffMeasure.staffEntries.forEach(entry => {
+                const graphicalVoiceEntries = entry.graphicalVoiceEntries
+                if (!graphicalVoiceEntries) return
+
+                // Calculate relative x position in measure (0.0 to 1.0)
+                // Entry RelativePosition is relative to the measure's AbsolutePosition
+                const relX = entry.PositionAndShape.RelativePosition.x * unitInPixels
+                const relativeTimestamp = relX / measureWidth
+
+                graphicalVoiceEntries.forEach(gve => {
+                    if (!gve.notes) return
+
+                    gve.notes.forEach(note => {
+                        // Access internal VexFlow note to get ID
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const internalNote = note as any
+                        if (internalNote.vfnote && internalNote.vfnote.length > 0) {
+                            const vfStaveNote = internalNote.vfnote[0]
+                            const vfId = vfStaveNote.attrs ? vfStaveNote.attrs.id : null
+
+                            if (vfId) {
+                                // Try to find the element in DOM
+                                // Check both raw ID and vf- prefixed ID
+                                let element = document.getElementById(vfId)
+                                if (!element) {
+                                    element = document.getElementById(`vf-${vfId}`)
+                                }
+
+                                if (element) {
+                                    measureNotes.push({
+                                        id: vfId,
+                                        measureIndex: measureNumber,
+                                        timestamp: relativeTimestamp,
+                                        element: element
+                                    })
+                                } else {
+                                    // Warn only if we expected to find it (sanity check)
+                                    // console.warn(`[ScoreViewer] Could not find DOM element for note ${vfId}`)
+                                }
+                            }
+                        }
+                    })
+                })
+            })
+
+            if (measureNotes.length > 0) {
+                newNoteMap.set(measureNumber, measureNotes)
+            }
+        })
+
+        noteMap.current = newNoteMap
+        console.log(`[ScoreViewer] Built Master Time Grid with ${newNoteMap.size} measures`)
+    }, [])
 
     // Initialize OSMD
     useEffect(() => {
@@ -43,6 +132,7 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
 
         osmd.load(xmlUrl).then(() => {
             osmd.render()
+            calculateNoteMap()
             setIsLoaded(true)
         }).catch((err) => {
             console.error('Failed to load MusicXML:', err)
@@ -52,7 +142,22 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
             osmdRef.current = null
             setIsLoaded(false)
         }
-    }, [musicXmlUrl])
+    }, [musicXmlUrl, calculateNoteMap])
+
+    // Handle Resize
+    useEffect(() => {
+        const handleResize = () => {
+            // OSMD handles the render on resize automatically (autoResize: true)
+            // But we wait a bit for it to finish then rebuild our map
+            // We can't easily hook into OSMD's internal resize event, so we debounce
+            setTimeout(() => {
+                calculateNoteMap()
+            }, 500)
+        }
+
+        window.addEventListener('resize', handleResize)
+        return () => window.removeEventListener('resize', handleResize)
+    }, [calculateNoteMap])
 
     // Find the current measure based on audio time
     const findCurrentMeasure = useCallback((time: number): { measure: number; progress: number } => {
@@ -96,7 +201,20 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
         return { measure: currentMeasure, progress }
     }, [anchors])
 
-    // Update cursor position - called from requestAnimationFrame
+    // Helper to set color on an element and its children
+    const applyColor = (element: Element, color: string) => {
+        // Paths (noteheads, flags, etc)
+        const paths = element.getElementsByTagName('path')
+        for (let i = 0; i < paths.length; i++) {
+            paths[i].setAttribute('fill', color)
+            paths[i].setAttribute('stroke', color)
+        }
+        // Group itself
+        element.setAttribute('fill', color)
+        element.setAttribute('stroke', color)
+    }
+
+    // Update cursor position and note highlighting - called from requestAnimationFrame
     const updateCursorPosition = useCallback((audioTime: number) => {
         const osmd = osmdRef.current
         if (!osmd || !isLoaded || !cursorRef.current) return
@@ -112,6 +230,7 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
         const currentMeasureIndex = measure - 1
 
         try {
+            // === CURSOR POSITIONING ===
             const measureList = osmd.GraphicSheet.MeasureList
 
             if (!measureList || measureList.length === 0) return
@@ -126,8 +245,9 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
             const positionAndShape = staffMeasure.PositionAndShape
             if (!positionAndShape) return
 
-            // OSMD uses internal units - typically multiplied by 10 for pixels
-            const unitInPixels = 10
+            // Use OSMD's actual unit scaling (handles zoom/scaling correctly)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const unitInPixels = (osmd.GraphicSheet as any).UnitInPixels || 10
 
             const absoluteX = positionAndShape.AbsolutePosition.x * unitInPixels
             const absoluteY = positionAndShape.AbsolutePosition.y * unitInPixels
@@ -135,10 +255,10 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
             const height = (positionAndShape.BorderBottom - positionAndShape.BorderTop) * unitInPixels
 
             // Apply interpolation for smooth movement within the measure
-            const finalX = absoluteX + (width * effectiveProgress)
+            const cursorX = absoluteX + (width * effectiveProgress)
 
             // Update the cursor div
-            cursorRef.current.style.left = `${finalX}px`
+            cursorRef.current.style.left = `${cursorX}px`
             cursorRef.current.style.top = `${absoluteY}px`
             cursorRef.current.style.height = `${Math.max(height, 80)}px`
             cursorRef.current.style.display = 'block'
@@ -150,6 +270,53 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
             cursorRef.current.style.boxShadow = mode === 'RECORD'
                 ? '0 0 8px rgba(255, 0, 0, 0.5)'
                 : '0 0 8px rgba(16, 185, 129, 0.5)'
+
+
+            // === KARAOKE HIGHLIGHTING (Master Time Grid) ===
+            // 1. Get notes for the current measure
+            const notesInMeasure = noteMap.current.get(measure)
+
+            if (notesInMeasure && mode === 'PLAYBACK') {
+                notesInMeasure.forEach(noteData => {
+                    if (!noteData.element) return
+
+                    const lookahead = 0.15 // 15% of measure width
+
+                    // Highlight if we are approaching the note or currently on it
+                    // But reset if we have passed it (progress > noteData.timestamp)
+                    // Wait, previous logic was: "increase noteWidthBuffer... keeps it green until cursor clears it"
+                    // "clearing it" means progress > timestamp.
+
+                    // Refined Logic based on "Approaching -> On It -> Passed":
+                    // Start highlighting when within 'lookahead' distance
+                    // Stop highlighting when 'passed' by some small amount (to account for note width)
+                    // Note width is small, maybe 0.02 of measure?
+
+                    const noteEndThreshold = noteData.timestamp + 0.03
+
+                    if (effectiveProgress <= noteEndThreshold && effectiveProgress >= noteData.timestamp - lookahead) {
+                        applyColor(noteData.element, '#10B981')
+                    } else {
+                        applyColor(noteData.element, '#000000')
+                    }
+                })
+            }
+
+            // Clean up: Reset notes in RECORD mode
+            if (mode === 'RECORD') {
+                // Ideally we should traverse everything we highlighted. 
+                // Grouping makes this easier: we only need to reset the *current* measure's notes if we just switched?
+                // Or just iterate all notes to be safe? 
+                // Iterating *all* notes in the song 60fps is bad. 
+                // But RECORD mode doesn't need 60fps highlighting. 
+                // Usually we just switched mode. 
+                // Let's just reset the current measure's notes to black in loop, it's fast enough.
+                if (notesInMeasure) {
+                    notesInMeasure.forEach(noteData => {
+                        if (noteData.element) applyColor(noteData.element, '#000000')
+                    })
+                }
+            }
 
         } catch (err) {
             console.error('Error positioning cursor:', err)
