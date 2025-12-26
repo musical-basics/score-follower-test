@@ -20,6 +20,8 @@ function App() {
   const [anchors, setAnchors] = useState<Anchor[]>(INITIAL_ANCHORS)
   const [mode, setMode] = useState<AppMode>('RECORD')
   const [projects, setProjects] = useState<Project[]>([])
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null)
+  const [currentProjectTitle, setCurrentProjectTitle] = useState<string | null>(null)
 
   // File State
   const [audioFile, setAudioFile] = useState<File | null>(null)
@@ -43,6 +45,8 @@ function App() {
       const file = e.target.files[0]
       setAudioFile(file)
       setAudioUrl(URL.createObjectURL(file))
+      setCurrentProjectId(null) // Reset ID/Title on new file
+      setCurrentProjectTitle(null)
     }
   }
 
@@ -51,28 +55,33 @@ function App() {
       const file = e.target.files[0]
       setXmlFile(file)
       setXmlUrl(URL.createObjectURL(file))
+      setCurrentProjectId(null)
+      setCurrentProjectTitle(null)
     }
   }
 
+  // Helper to fetch valid file from URL
+  const fetchFileFromUrl = async (url: string, filename: string): Promise<File> => {
+    const response = await fetch(url)
+    const blob = await response.blob()
+    return new File([blob], filename, { type: blob.type })
+  }
+
   // Save Project
-  const handleSave = async () => {
-    const title = window.prompt('Enter project name:')
+  // Create a NEW project (Uploads files + Creates new Row)
+  const handleSaveAs = async () => {
+    // Check if we have files OR urls to fetch from
+    if (!audioFile && !audioUrl) {
+      alert("No audio to save.")
+      return
+    }
+
+    const title = window.prompt('Enter new project name:')
     if (!title) return
 
     try {
-      // Determine what to save
-      // If user provided files, use them.
-      // If not, fetch the current URL as a blob (handling default/remote assets)
-
       let finalAudioFile = audioFile
       let finalXmlFile = xmlFile
-
-      // Helper to fetch valid file from URL
-      const fetchFileFromUrl = async (url: string, filename: string): Promise<File> => {
-        const response = await fetch(url)
-        const blob = await response.blob()
-        return new File([blob], filename, { type: blob.type })
-      }
 
       if (!finalAudioFile) {
         console.log('Fetching audio from URL:', audioUrl)
@@ -86,14 +95,37 @@ function App() {
         finalXmlFile = await fetchFileFromUrl(urlToFetch, 'score.xml')
       }
 
-      await projectService.saveProject(title, finalAudioFile, finalXmlFile, anchors)
-      alert('Project saved successfully!')
+      const newProject = await projectService.saveProject(title, finalAudioFile, finalXmlFile, anchors)
+      alert('New project created!')
+
       // Refresh list
+      const updatedProjects = await projectService.getProjects()
+      setProjects(updatedProjects)
+
+      // Switch context to this new project
+      setCurrentProjectId(newProject.id)
+      setCurrentProjectTitle(newProject.title)
+    } catch (err) {
+      console.error(err)
+      alert('Failed to create new project. Check console.')
+    }
+  }
+
+  // Overwrite the existing project
+  const handleSave = async () => {
+    // Safety check
+    if (!currentProjectId) return
+
+    try {
+      await projectService.updateProject(currentProjectId, anchors)
+      alert('Project saved!')
+
+      // Refresh list to ensure we have the latest data if we swap projects
       const updatedProjects = await projectService.getProjects()
       setProjects(updatedProjects)
     } catch (err) {
       console.error(err)
-      alert('Failed to save project. Check console.')
+      alert('Failed to update project.')
     }
   }
 
@@ -106,6 +138,8 @@ function App() {
       setAudioUrl(project.audio_url)
       setXmlUrl(project.xml_url)
       setAnchors(project.anchors)
+      setCurrentProjectId(project.id) // Track the ID
+      setCurrentProjectTitle(project.title)
 
       // Reset to Loaded/Record state
       setMode('RECORD')
@@ -218,16 +252,35 @@ function App() {
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold tracking-wide">Score Follower</h1>
 
-          {/* Save Button */}
-          <button
-            onClick={handleSave}
-            // Enable save if we have new files OR if we are using default/url assets (which we always are)
-            // Ideally we disable if "loading", but for now always enabled is better than always disabled.
-            // But let's check if we have something valid. We always have defaults.
-            className={'px-3 py-1 rounded text-sm font-semibold transition-colors bg-blue-600 hover:bg-blue-700'}
-          >
-            Save Project
-          </button>
+          {/* Title Display */}
+          {currentProjectTitle && (
+            <div className="hidden md:block text-sm font-semibold text-blue-200 bg-slate-700 px-3 py-1 rounded border border-slate-600">
+              Current: <span className="text-white ml-1">{currentProjectTitle}</span>
+            </div>
+          )}
+
+          {/* Save Buttons */}
+          <div className="flex gap-2">
+            {/* UPDATE BUTTON - Only show if loaded */}
+            {currentProjectId && (
+              <button
+                onClick={handleSave}
+                disabled={anchors.length === 0}
+                className="px-3 py-1 rounded text-sm font-semibold bg-blue-600 hover:bg-blue-700 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
+              >
+                Save
+              </button>
+            )}
+
+            {/* SAVE NEW BUTTON - Always show (effectively Save As) */}
+            <button
+              onClick={handleSaveAs}
+              disabled={(!audioFile && !audioUrl)}
+              className="px-3 py-1 rounded text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
+            >
+              {currentProjectId ? 'Save New' : 'Save New Project'}
+            </button>
+          </div>
 
           {/* Load Dropdown */}
           <select
@@ -241,7 +294,7 @@ function App() {
             <option value="">Load Project...</option>
             {projects.map(p => (
               <option key={p.id} value={p.id}>
-                {p.title} ({new Date(p.created_at).toLocaleDateString()})
+                {p.title} (Mod: {new Date(p.updated_at || p.created_at).toLocaleString()})
               </option>
             ))}
           </select>

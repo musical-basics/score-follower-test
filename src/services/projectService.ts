@@ -27,6 +27,7 @@ export interface Project {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     anchors: any[]
     created_at: string
+    updated_at: string
 }
 
 export const projectService = {
@@ -68,8 +69,34 @@ export const projectService = {
                 title,
                 audio_url: audioUrl,
                 xml_url: xmlUrl,
-                anchors: anchors
+                anchors: anchors,
+                updated_at: new Date().toISOString()
             })
+            .select()
+
+        if (error) throw error
+        return data[0]
+    },
+
+    // Update existing project (anchors only)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async updateProject(id: string, anchors: any[], title?: string) {
+        console.log(`[ProjectService] Updating project ${id}...`)
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updates: any = {
+            anchors: anchors,
+            updated_at: new Date().toISOString()
+        }
+
+        if (title) {
+            updates.title = title
+        }
+
+        const { data, error } = await supabase
+            .from('projects')
+            .update(updates)
+            .eq('id', id)
             .select()
 
         if (error) throw error
@@ -81,7 +108,7 @@ export const projectService = {
         const { data, error } = await supabase
             .from('projects')
             .select('*')
-            .order('created_at', { ascending: false })
+            .order('updated_at', { ascending: false })
 
         if (error) throw error
         return data || []
