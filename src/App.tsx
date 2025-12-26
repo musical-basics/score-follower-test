@@ -13,8 +13,8 @@ export type AppMode = 'RECORD' | 'PLAYBACK'
 // Measure 1 always starts at 0:00
 const INITIAL_ANCHORS: Anchor[] = [{ measure: 1, time: 0 }]
 const DEFAULT_AUDIO = '/c-major-exercise.mp3'
-// ScoreViewer handles default XML if prop is missing, but let's be explicit if we can. 
-// We'll pass undefined initially so ScoreViewer uses its default.
+// Default XML handles by ScoreViewer if undefined, but for saving we need to know what to save
+const DEFAULT_XML = '/c-major-exercise.musicxml'
 
 function App() {
   const [anchors, setAnchors] = useState<Anchor[]>(INITIAL_ANCHORS)
@@ -27,7 +27,7 @@ function App() {
 
   // URL State (drives the player/viewer)
   const [audioUrl, setAudioUrl] = useState<string>(DEFAULT_AUDIO)
-  const [xmlUrl, setXmlUrl] = useState<string | undefined>(undefined)
+  const [xmlUrl, setXmlUrl] = useState<string | undefined>(undefined) // undefined uses default inside Viewer
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const anchorListRef = useRef<HTMLDivElement>(null)
@@ -56,16 +56,37 @@ function App() {
 
   // Save Project
   const handleSave = async () => {
-    if (!audioFile || !xmlFile) {
-      alert('Please upload both Audio and MusicXML files to save a project.')
-      return
-    }
-
     const title = window.prompt('Enter project name:')
     if (!title) return
 
     try {
-      await projectService.saveProject(title, audioFile, xmlFile, anchors)
+      // Determine what to save
+      // If user provided files, use them.
+      // If not, fetch the current URL as a blob (handling default/remote assets)
+
+      let finalAudioFile = audioFile
+      let finalXmlFile = xmlFile
+
+      // Helper to fetch valid file from URL
+      const fetchFileFromUrl = async (url: string, filename: string): Promise<File> => {
+        const response = await fetch(url)
+        const blob = await response.blob()
+        return new File([blob], filename, { type: blob.type })
+      }
+
+      if (!finalAudioFile) {
+        console.log('Fetching audio from URL:', audioUrl)
+        finalAudioFile = await fetchFileFromUrl(audioUrl, 'audio.mp3')
+      }
+
+      if (!finalXmlFile) {
+        // use xmlUrl or default
+        const urlToFetch = xmlUrl || DEFAULT_XML
+        console.log('Fetching XML from URL:', urlToFetch)
+        finalXmlFile = await fetchFileFromUrl(urlToFetch, 'score.xml')
+      }
+
+      await projectService.saveProject(title, finalAudioFile, finalXmlFile, anchors)
       alert('Project saved successfully!')
       // Refresh list
       const updatedProjects = await projectService.getProjects()
@@ -88,7 +109,8 @@ function App() {
 
       // Reset to Loaded/Record state
       setMode('RECORD')
-      handleReset() // Reset playback pos? No, handleReset resets anchors. We just set anchors.
+      // handleReset() removed because it wipes the anchors we just loaded!
+
       // We should probably seek audio to 0
       if (audioRef.current) {
         audioRef.current.currentTime = 0
@@ -180,9 +202,10 @@ function App() {
           {/* Save Button */}
           <button
             onClick={handleSave}
-            disabled={!audioFile || !xmlFile}
-            className={`px-3 py-1 rounded text-sm font-semibold transition-colors ${audioFile && xmlFile ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-              }`}
+            // Enable save if we have new files OR if we are using default/url assets (which we always are)
+            // Ideally we disable if "loading", but for now always enabled is better than always disabled.
+            // But let's check if we have something valid. We always have defaults.
+            className={'px-3 py-1 rounded text-sm font-semibold transition-colors bg-blue-600 hover:bg-blue-700'}
           >
             Save Project
           </button>

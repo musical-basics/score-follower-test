@@ -132,6 +132,14 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
 
         osmd.load(xmlUrl).then(() => {
             osmd.render()
+            // Force a resize after a short delay to ensure layout is correct
+            // This fixes the issue where the score loads with incorrect system breaks (e.g. 2 staves)
+            // before snapping to the correct width.
+            setTimeout(() => {
+                osmd.render()
+                calculateNoteMap()
+            }, 100)
+
             calculateNoteMap()
             setIsLoaded(true)
         }).catch((err) => {
