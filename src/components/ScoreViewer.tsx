@@ -234,9 +234,9 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
 
         const { measure, progress } = findCurrentMeasure(audioTime)
 
-        // In RECORD mode: snap to measure start (progress = 0)
-        // In PLAYBACK mode: use interpolated progress
-        const effectiveProgress = mode === 'RECORD' ? 0 : progress
+        // In RECORD mode: We still want to see where we are (Ghost Cursor), so use real progress!
+        // But if we want to visually distinguish "locked" vs "live", we do that in styling.
+        const effectiveProgress = progress
 
         // Convert to 0-index for OSMD
         const currentMeasureIndex = measure - 1
@@ -414,17 +414,26 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
             <div
                 ref={cursorRef}
                 id="cursor-overlay"
-                className="absolute pointer-events-none"
+                className="absolute pointer-events-none transition-all duration-75" // Added transition for smooth color swap
                 style={{
                     left: 0,
                     top: 0,
                     width: '3px',
                     height: '100px',
-                    backgroundColor: mode === 'RECORD' ? 'rgba(255, 0, 0, 0.8)' : 'rgba(16, 185, 129, 0.8)',
-                    boxShadow: mode === 'RECORD' ? '0 0 8px rgba(255, 0, 0, 0.5)' : '0 0 8px rgba(16, 185, 129, 0.5)',
+                    // Logic: Record = Red (Live Recording), Playback = Green (Synced)
+                    backgroundColor: mode === 'RECORD'
+                        ? 'rgba(239, 68, 68, 0.6)' // Red-500 with opacity (Ghost-like)
+                        : 'rgba(16, 185, 129, 0.8)', // Emerald-500
+
+                    // Logic: Record = Glow red, Playback = Glow green
+                    boxShadow: mode === 'RECORD'
+                        ? '0 0 10px rgba(239, 68, 68, 0.4)'
+                        : '0 0 8px rgba(16, 185, 129, 0.5)',
+
                     zIndex: 1000,
                     display: 'none',
-                    transition: mode === 'PLAYBACK' ? 'left 0.05s linear' : 'none',
+                    // Ensure smooth movement in both modes now!
+                    transition: 'left 0.05s linear',
                 }}
             />
         </div>
