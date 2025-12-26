@@ -24,6 +24,7 @@ type NoteData = {
 export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
+    const scrollContainerRef = useRef<HTMLDivElement>(null) // 1. NEW: Add a Ref for the outer scrollable wrapper
     const osmdRef = useRef<OSMD | null>(null)
     const [isLoaded, setIsLoaded] = useState(false)
     const animationFrameRef = useRef<number | null>(null)
@@ -307,6 +308,26 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
                 : '0 0 8px rgba(16, 185, 129, 0.5)'
 
 
+            // 2. NEW: Auto-Scroll Logic ("Page Turn" Style)
+            if (scrollContainerRef.current) {
+                const container = scrollContainerRef.current
+
+                // Define the "viewable area"
+                const containerTop = container.scrollTop
+                const containerBottom = container.scrollTop + container.clientHeight
+                const cursorBottom = systemTop + systemHeight
+
+                // Check if cursor is below the fold (scrolling down)
+                if (cursorBottom > containerBottom) {
+                    // Scroll so the current system aligns to the top (with 20px padding)
+                    container.scrollTo({ top: systemTop - 20, behavior: 'smooth' })
+                }
+                // Check if cursor is above the fold (scrolling up/backwards)
+                else if (systemTop < containerTop) {
+                    container.scrollTo({ top: systemTop - 20, behavior: 'smooth' })
+                }
+            }
+
             // === KARAOKE HIGHLIGHTING (Master Time Grid) ===
             // 1. Get notes for the current measure
             const notesInMeasure = noteMap.current.get(measure)
@@ -379,7 +400,10 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
     }, [isLoaded, updateCursorPosition, audioRef])
 
     return (
-        <div className="relative w-full h-full overflow-auto bg-white">
+        <div
+            ref={scrollContainerRef}
+            className="relative w-full h-full overflow-auto bg-white"
+        >
             {/* OSMD Container */}
             <div
                 ref={containerRef}

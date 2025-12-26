@@ -190,6 +190,13 @@ function App() {
     }
   }, [mode])
 
+  // Jump to specific time (Click-to-Seek)
+  const handleJumpToMeasure = (time: number) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = time
+    }
+  }
+
   // Reset anchors to start fresh (but keep Measure 1 at 0)
   const handleReset = useCallback(() => {
     setAnchors(INITIAL_ANCHORS)
@@ -385,9 +392,12 @@ function App() {
                   const isMeasureOne = m === 1
 
                   if (anchor) {
-                    // === RENDER EXISTING ANCHOR ===
                     rows.push(
-                      <div key={m} className="border rounded-md px-3 py-2 text-sm flex items-center justify-between bg-white border-gray-200">
+                      <div
+                        key={m}
+                        onClick={() => handleJumpToMeasure(anchor.time)}
+                        className="cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-all border rounded-md px-3 py-2 text-sm flex items-center justify-between bg-white border-gray-200"
+                      >
                         <span className="font-medium text-gray-600">Measure {m}:</span>
 
                         <div className="flex items-center gap-2">
@@ -399,13 +409,17 @@ function App() {
                             onChange={(e) => upsertAnchor(m, parseFloat(e.target.value))}
                             disabled={mode !== 'RECORD' || isMeasureOne}
                             className="w-16 text-right font-mono border rounded px-1"
+                            onClick={(e) => e.stopPropagation()}
                           />
                           <span className="text-gray-400 text-xs">s</span>
 
                           {/* Delete Button (X) */}
                           {!isMeasureOne && mode === 'RECORD' && (
                             <button
-                              onClick={() => handleDelete(m)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDelete(m)
+                              }}
                               className="ml-2 text-gray-400 hover:text-red-500 font-bold px-2"
                               title="Un-sync this measure"
                             >
