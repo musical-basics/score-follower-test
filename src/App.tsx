@@ -16,7 +16,6 @@ type ViewMode = 'PAGE' | 'SCROLL'
 // Measure 1 always starts at 0:00
 const INITIAL_ANCHORS: Anchor[] = [{ measure: 1, time: 0 }]
 export const DEFAULT_AUDIO = '/c-major-scale.mp3'
-// Default XML handles by ScoreViewer if undefined, but for saving we need to know what to save
 const DEFAULT_XML = '/c-major-exercise.musicxml'
 
 function App() {
@@ -26,11 +25,14 @@ function App() {
   const [darkMode, setDarkMode] = useState(false)
   const [highlightNote, setHighlightNote] = useState(true)
   const [cursorPosition, setCursorPosition] = useState(0.2)
+  const [isIslandMode, setIsIslandMode] = useState(false)
   const [anchors, setAnchors] = useState<Anchor[]>(INITIAL_ANCHORS)
   const [mode, setMode] = useState<AppMode>('PLAYBACK')
   const [projects, setProjects] = useState<Project[]>([])
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null)
   const [currentProjectTitle, setCurrentProjectTitle] = useState<string | null>(null)
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false) // Added missing state
+  const [isLoadModalOpen, setIsLoadModalOpen] = useState(false) // Added missing state
 
   // File State
   const [audioFile, setAudioFile] = useState<File | null>(null)
@@ -38,23 +40,18 @@ function App() {
 
   // URL State (drives the player/viewer)
   const [audioUrl, setAudioUrl] = useState<string>(DEFAULT_AUDIO)
-  const [xmlUrl, setXmlUrl] = useState<string | undefined>(undefined) // undefined uses default inside Viewer
+  const [xmlUrl, setXmlUrl] = useState<string | undefined>(undefined)
 
   const [currentMeasure, setCurrentMeasure] = useState<number>(1)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const anchorListRef = useRef<HTMLDivElement>(null)
-  // Ref for the specific DOM element of the active row (to scroll to it)
   const activeRowRef = useRef<HTMLDivElement>(null)
 
-  // Helper: Find measure based on time (for Sidebar highlighting)
+  // Helper: Find measure based on time
   const getCurrentMeasure = useCallback((time: number) => {
     if (anchors.length === 0) return 1
-
-    // Sort anchors just in case
     const sorted = [...anchors].sort((a, b) => a.time - b.time)
-
-    // Find the last anchor that is <= current time
     const anchor = sorted.reverse().find(a => a.time <= time)
     return anchor ? anchor.measure : 1
   }, [anchors])
@@ -62,12 +59,9 @@ function App() {
   // Load projects on mount
   useEffect(() => {
     const init = async () => {
-      // 1. Load the list of projects (existing logic)
       try {
         const list = await projectService.getProjects()
         setProjects(list)
-
-        // 2. Check if we have a "Last Project" saved
         const lastId = localStorage.getItem('lastProjectId')
         if (lastId) {
           console.log('Restoring last session:', lastId)
@@ -80,7 +74,6 @@ function App() {
         console.error('Initialization failed:', err)
       }
     }
-
     init()
   }, [])
 
@@ -90,7 +83,7 @@ function App() {
       const file = e.target.files[0]
       setAudioFile(file)
       setAudioUrl(URL.createObjectURL(file))
-      setCurrentProjectId(null) // Reset ID/Title on new file
+      setCurrentProjectId(null)
       setCurrentProjectTitle(null)
     }
   }
@@ -105,7 +98,6 @@ function App() {
     }
   }
 
-  // Helper to fetch valid file from URL
   const fetchFileFromUrl = async (url: string, filename: string): Promise<File> => {
     const response = await fetch(url)
     const blob = await response.blob()
@@ -113,9 +105,7 @@ function App() {
   }
 
   // Save Project
-  // Create a NEW project (Uploads files + Creates new Row)
   const handleSaveAs = async () => {
-    // Check if we have files OR urls to fetch from
     if (!audioFile && !audioUrl) {
       alert("No audio to save.")
       return
@@ -134,7 +124,6 @@ function App() {
       }
 
       if (!finalXmlFile) {
-        // use xmlUrl or default
         const urlToFetch = xmlUrl || DEFAULT_XML
         console.log('Fetching XML from URL:', urlToFetch)
         finalXmlFile = await fetchFileFromUrl(urlToFetch, 'score.xml')
@@ -142,31 +131,24 @@ function App() {
 
       const newProject = await projectService.saveProject(title, finalAudioFile, finalXmlFile, anchors)
       alert('New project created!')
-
-      // Refresh list
       const updatedProjects = await projectService.getProjects()
       setProjects(updatedProjects)
 
-      // Switch context to this new project
       setCurrentProjectId(newProject.id)
       setCurrentProjectTitle(newProject.title)
       localStorage.setItem('lastProjectId', newProject.id)
+      setIsSaveModalOpen(false)
     } catch (err) {
       console.error(err)
       alert('Failed to create new project. Check console.')
     }
   }
 
-  // Overwrite the existing project
   const handleSave = async () => {
-    // Safety check
     if (!currentProjectId) return
-
     try {
       await projectService.updateProject(currentProjectId, anchors)
       alert('Project saved!')
-
-      // Refresh list to ensure we have the latest data if we swap projects
       const updatedProjects = await projectService.getProjects()
       setProjects(updatedProjects)
     } catch (err) {
@@ -175,50 +157,36 @@ function App() {
     }
   }
 
-  // 1. EXTRACTED LOADING LOGIC (No Confirm)
   const loadProjectState = useCallback((project: Project) => {
-    // Clear file inputs as we are using URLs now
     setAudioFile(null)
     setXmlFile(null)
-
     setAudioUrl(project.audio_url)
     setXmlUrl(project.xml_url)
     setAnchors(project.anchors)
-    setCurrentProjectId(project.id) // Track the ID
+    setCurrentProjectId(project.id)
     setCurrentProjectTitle(project.title)
-
-    // Reset to Loaded/Record state
     setMode('RECORD')
-
-    // Reset audio position
     if (audioRef.current) {
       audioRef.current.currentTime = 0
     }
-
-    // PERSIST: Save ID to local storage so we remember next time
     localStorage.setItem('lastProjectId', project.id)
   }, [])
 
-  // 2. UPDATED BUTTON HANDLER (With Confirm)
   const handleLoadClick = (project: Project) => {
     if (confirm(`Load project "${project.title}" ? Unsaved changes will be lost.`)) {
       loadProjectState(project)
+      setIsLoadModalOpen(false)
     }
   }
 
-  // Add this helper to insert/update an anchor while keeping the array sorted
   const upsertAnchor = (measure: number, time: number) => {
     setAnchors(prev => {
-      // Remove existing anchor for this measure if it exists
       const filtered = prev.filter(a => a.measure !== measure)
-      // Add the new one
       const newAnchors = [...filtered, { measure, time }]
-      // Sort by measure number to keep the list clean
       return newAnchors.sort((a, b) => a.measure - b.measure)
     })
   }
 
-  // The Delete Handler
   const handleDelete = (measureToDelete: number) => {
     if (measureToDelete === 1) {
       alert("Cannot delete the start of the song (Measure 1).")
@@ -227,60 +195,40 @@ function App() {
     setAnchors(prev => prev.filter(a => a.measure !== measureToDelete))
   }
 
-  // The "Restamp" Handler (for the ghost row)
   const handleRestamp = (measureToStamp: number) => {
     if (!audioRef.current) return
     upsertAnchor(measureToStamp, audioRef.current.currentTime)
   }
 
   const handleTap = useCallback(() => {
-    // Only allow tapping in RECORD mode
     if (mode !== 'RECORD') return
-
     if (audioRef.current) {
       const currentTime = audioRef.current.currentTime
-      // Next measure number is current length + 1 (since we start with Measure 1)
       setAnchors(prev => [...prev, { measure: prev.length + 1, time: currentTime }])
     }
   }, [mode])
 
-  // Jump to specific time (Click-to-Seek)
   const handleJumpToMeasure = (time: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time
     }
   }
 
-  // Reset anchors to start fresh (but keep Measure 1 at 0)
   const handleReset = useCallback(() => {
     setAnchors(INITIAL_ANCHORS)
   }, [])
 
-
-
-  // Toggle between RECORD and PLAYBACK modes
   const toggleMode = useCallback(() => {
     setMode(prev => prev === 'RECORD' ? 'PLAYBACK' : 'RECORD')
   }, [])
 
-  // Auto-reset when audio is seeked to beginning (only in RECORD mode)
   const handleSeeked = useCallback(() => {
-    // Check if we have more than the initial anchor to avoid infinite loops or unneeded resets
-    // Also check if we are significantly close to 0
     if (mode === 'RECORD' && audioRef.current && audioRef.current.currentTime < 0.1 && anchors.length > 1) {
-      // Only reset if we manually seeked to 0? 
-      // The original logic was: reset anchors if seeked to 0.
-      // But if I load a project, I set anchors, and seek to 0. I don't want to wipe them.
-      // Fix: Only reset if we are NOT loading? 
-      // Better: Just manual clear. Auto-clear on seek is annoying if I just want to replay what I recorded.
-      // Let's REMOVE the auto-reset on seek feature for now as it conflicts with Loading.
-      // Or keep it but strictly checking user intent? Hard. Removing for safety.
-      // User can use "Clear" button.
+      // Logic removed intentionally
     }
-  }, [mode, anchors.length]) // eslint-disable-line
+  }, [mode, anchors.length])
 
   const handleEnded = useCallback(() => {
-    // Optionally reset when audio ends
   }, [])
 
   const togglePlayPause = useCallback(() => {
@@ -293,383 +241,292 @@ function App() {
     }
   }, [])
 
-  // Auto-scroll Sidebar to follow music
   useEffect(() => {
     if (activeRowRef.current) {
       activeRowRef.current.scrollIntoView({
         behavior: 'smooth',
-        block: 'nearest', // Only scroll if out of view (or close to edge)
+        block: 'nearest',
       })
     }
   }, [currentMeasure])
 
-  // Auto-scroll to newest anchor
   useEffect(() => {
     if (anchorListRef.current && anchors.length > 0) {
       anchorListRef.current.scrollTop = anchorListRef.current.scrollHeight
     }
   }, [anchors])
 
-  // Handle global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // 1. Ignore shortcuts if user is typing in an Input field
       if (event.target instanceof HTMLInputElement) return
-
-      // 2. SPACEBAR -> Play/Pause
       if (event.code === 'Space') {
-        event.preventDefault() // Prevent page scrolling
+        event.preventDefault()
         togglePlayPause()
       }
-
-      // 3. "A" KEY -> Add Anchor (Tap)
       else if (event.code === 'KeyA') {
-        // Only prevent default if we actually handled it
         if (mode === 'RECORD') {
           handleTap()
         }
       }
     }
-
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleTap, togglePlayPause, mode])
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      {/* Top Header */}
-      <header className="bg-slate-800 text-white py-4 px-6 shadow-lg flex items-center justify-between z-10">
+    <div className={`flex flex-col h-screen ${darkMode ? 'bg-[#222222] text-[#e0e0e0]' : 'bg-white text-slate-900'}`}>
+
+      {/* 1. MAIN HEADER (Global App Controls) */}
+      <div className="flex items-center justify-between px-6 py-3 bg-slate-900 text-white border-b border-slate-800 z-50">
+        <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+          Score Follower
+        </h1>
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold tracking-wide">Score Follower</h1>
 
-          {/* Title Display */}
-          {currentProjectTitle && (
-            <div className="hidden md:block text-sm font-semibold text-blue-200 bg-slate-700 px-3 py-1 rounded border border-slate-600">
-              Current: <span className="text-white ml-1">{currentProjectTitle}</span>
-            </div>
-          )}
-
-          {/* Save Buttons */}
-          <div className="flex gap-2">
-            {/* UPDATE BUTTON - Only show if loaded */}
-            {currentProjectId && (
-              <button
-                onClick={handleSave}
-                disabled={anchors.length === 0}
-                className="px-3 py-1 rounded text-sm font-semibold bg-blue-600 hover:bg-blue-700 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
-              >
-                Save
-              </button>
-            )}
-
-            {/* SAVE NEW BUTTON - Always show (effectively Save As) */}
+          {/* Load/Save Group */}
+          <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
             <button
-              onClick={handleSaveAs}
-              disabled={(!audioFile && !audioUrl)}
-              className="px-3 py-1 rounded text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
+              onClick={() => {
+                if (currentProjectId) {
+                  handleSave()
+                } else {
+                  handleSaveAs()
+                }
+              }}
+              className="px-3 py-1.5 bg-slate-700 hover:bg-emerald-600 rounded-l text-xs font-bold transition-all border-r border-slate-600"
             >
-              {currentProjectId ? 'Save New' : 'Save New Project'}
+              Save
+            </button>
+            <button
+              onClick={() => handleSaveAs()}
+              className="px-2 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-r text-xs font-bold transition-all"
+              title="Save As..."
+            >
+              ▼
             </button>
           </div>
 
-          {/* Load Dropdown */}
+          {/* Load Select */}
           <select
-            className="bg-slate-700 text-white px-3 py-1 rounded text-sm border border-slate-600 focus:outline-none focus:border-blue-500"
+            className="bg-slate-700 text-white px-3 py-1 rounded text-sm border border-slate-600 focus:outline-none focus:border-blue-500 max-w-[150px]"
             onChange={(e) => {
               const proj = projects.find(p => p.id === e.target.value)
               if (proj) handleLoadClick(proj)
-              e.target.value = "" // Reset selection
+              e.target.value = ""
             }}
           >
             <option value="">Load Project...</option>
             {projects.map(p => (
               <option key={p.id} value={p.id}>
-                {p.title} (Mod: {new Date(p.updated_at || p.created_at).toLocaleString()})
+                {p.title}
               </option>
             ))}
           </select>
+
+          <div className="w-px h-6 bg-slate-700 mx-2"></div>
+
+          <button onClick={() => setViewMode(v => v === 'PAGE' ? 'SCROLL' : 'PAGE')}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-medium border border-slate-700">
+            {viewMode === 'PAGE' ? '∞ Scroll View' : '📄 Page View'}
+          </button>
         </div>
+      </div>
 
-        <div className="flex items-center gap-2">
-          {/* Mode Toggle Button */}
-          <button
-            onClick={toggleMode}
-            className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${mode === 'RECORD'
-              ? 'bg-red-500 hover:bg-red-600 text-white'
-              : 'bg-emerald-500 hover:bg-emerald-600 text-white'
-              }`}
-          >
-            {mode === 'RECORD' ? '🔴 RECORD Mode' : '▶️ PLAYBACK Mode'}
-          </button>
+      {/* 2. SUBMENU (UX Controls) - Only visible if NOT in Island Mode */}
+      {viewMode === 'SCROLL' && !isIslandMode && (
+        <div className="flex items-center justify-between px-6 py-2 bg-slate-100 border-b border-slate-200 text-slate-700 shadow-sm z-40">
 
-          {/* View Mode Toggle */}
-          <button
-            onClick={() => setViewMode(prev => prev === 'PAGE' ? 'SCROLL' : 'PAGE')}
-            className="px-3 py-2 rounded bg-slate-700 text-white text-sm font-semibold border border-slate-600 hover:bg-slate-600 transition-colors"
-          >
-            {viewMode === 'PAGE' ? '📄 Page View' : '∞ Scroll View'}
-          </button>
+          {/* Left: Reveal Modes */}
+          <div className="flex items-center gap-1 bg-slate-200 p-1 rounded-lg">
+            {(['OFF', 'NOTE', 'CURTAIN'] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => setRevealMode(m)}
+                className={`
+                              px-3 py-1 rounded-md text-xs font-bold transition-all
+                              ${revealMode === m
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'}
+                          `}
+              >
+                {m === 'OFF' ? 'Normal' : m === 'NOTE' ? 'Note Reveal' : 'Curtain'}
+              </button>
+            ))}
+          </div>
 
-          {/* Reveal Mode Toggle (Restored) */}
-          {viewMode === 'SCROLL' && (
-            <button
-              onClick={() => setRevealMode(prev => {
-                if (prev === 'OFF') return 'NOTE'
-                if (prev === 'NOTE') return 'CURTAIN'
-                return 'OFF'
-              })}
-              className={`px-3 py-1 rounded text-sm font-semibold border transition-colors ${revealMode === 'NOTE'
-                ? 'bg-purple-600 border-purple-500 text-white shadow-[0_0_10px_rgba(147,51,234,0.5)]'
-                : revealMode === 'CURTAIN'
-                  ? 'bg-indigo-600 border-indigo-500 text-white shadow-[0_0_10px_rgba(79,70,229,0.5)]'
-                  : 'bg-slate-700 border-slate-600 text-gray-300 hover:bg-slate-600'
-                }`}
-            >
-              {revealMode === 'OFF' && '👁️ Reveal OFF'}
-              {revealMode === 'NOTE' && '🎵 Note Reveal'}
-              {revealMode === 'CURTAIN' && '⬜ Curtain Mode'}
+          {/* Center: Visual Toggles */}
+          <div className="flex items-center gap-4">
+            <button onClick={() => setDarkMode(!darkMode)} className="flex items-center gap-2 text-sm font-medium hover:text-slate-900 transition-colors">
+              <span className={darkMode ? 'text-slate-900' : 'text-slate-400'}>{darkMode ? '🌙' : '☀️'}</span>
+              <span>Dark Mode</span>
             </button>
-          )}
 
-          {/* Reveal Mode Toggle (Removed - Moved to ModularIsland) */}
+            <div className="w-px h-4 bg-slate-300"></div>
+
+            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer hover:text-emerald-600 transition-colors">
+              <input type="checkbox" checked={highlightNote} onChange={e => setHighlightNote(e.target.checked)} className="accent-emerald-500" />
+              Highlight
+            </label>
+
+            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer hover:text-pink-600 transition-colors">
+              <input type="checkbox" checked={popEffect} onChange={e => setPopEffect(e.target.checked)} className="accent-pink-500" />
+              Pop Effect
+            </label>
+          </div>
+
+          {/* Right: Cursor & Breakout */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-slate-400">Cursor</span>
+              <input
+                type="range" min="0.2" max="0.8" step="0.01"
+                value={cursorPosition}
+                onChange={e => setCursorPosition(parseFloat(e.target.value))}
+                className="w-24 h-1.5 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-slate-600"
+              />
+            </div>
+
+            <div className="w-px h-4 bg-slate-300"></div>
+
+            {/* BREAKOUT BUTTON */}
+            <button
+              onClick={() => setIsIslandMode(true)}
+              title="Detach Controls (Float)"
+              className="p-1.5 hover:bg-slate-200 rounded text-slate-500 hover:text-slate-900 transition-colors"
+            >
+              ↗
+            </button>
+          </div>
         </div>
-      </header>
+      )}
 
-      {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Score Container - Main Content */}
-        <main
-          id="score-container"
-          className="flex-grow bg-gray-100 overflow-auto relative"
-        >
+      {/* Main Content (Flex Row) */}
+      <div className="flex-1 flex overflow-hidden">
+
+        {/* Score Area */}
+        <div className="flex-1 relative overflow-hidden flex flex-col">
           {viewMode === 'PAGE' ? (
             <ScoreViewer
-              audioRef={audioRef}
-              anchors={anchors}
-              mode={mode}
-              musicXmlUrl={xmlUrl}
+              audioRef={audioRef} anchors={anchors} mode={mode} musicXmlUrl={xmlUrl || DEFAULT_XML}
             />
           ) : (
             <ScoreViewerScroll
-              audioRef={audioRef}
-              anchors={anchors}
-              mode={mode}
-              musicXmlUrl={xmlUrl}
-              revealMode={revealMode}
-              popEffect={popEffect}
-              darkMode={darkMode}
-              highlightNote={highlightNote}
-              cursorPosition={cursorPosition}
+              audioRef={audioRef} anchors={anchors} mode={mode} musicXmlUrl={xmlUrl || DEFAULT_XML}
+              revealMode={revealMode} popEffect={popEffect} darkMode={darkMode}
+              highlightNote={highlightNote} cursorPosition={cursorPosition}
             />
           )}
-        </main>
 
-        {/* Right Sidebar - Sync Anchors */}
-        <aside className="w-[320px] bg-white border-l border-gray-300 flex flex-col shadow-xl z-10">
+          {/* MODULAR ISLAND (Only visible if isIslandMode is TRUE) */}
+          {viewMode === 'SCROLL' && isIslandMode && (
+            <ModularIsland
+              popEffect={popEffect} setPopEffect={setPopEffect}
+              darkMode={darkMode} setDarkMode={setDarkMode}
+              highlightNote={highlightNote} setHighlightNote={setHighlightNote}
+              cursorPosition={cursorPosition} setCursorPosition={setCursorPosition}
+              onDock={() => setIsIslandMode(false)}
+            />
+          )}
+        </div>
 
-          {/* Project Configuration Section */}
-          <div className="p-4 border-b border-gray-200 bg-gray-50">
-            <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">
-              Project Files
-            </h2>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Audio File (.mp3, .wav)</label>
-                <input
-                  type="file"
-                  accept="audio/*"
-                  onChange={handleAudioSelect}
-                  className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Sheet Music (.xml, .musicxml)</label>
-                <input
-                  type="file"
-                  accept=".xml,.musicxml"
-                  onChange={handleXmlSelect}
-                  className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                />
-              </div>
+        {/* Sidebar (Sync Anchors) */}
+        <aside className="w-[320px] bg-white border-l border-gray-300 flex flex-col shadow-xl z-30">
+
+          {/* Playback Controls / Mode Toggle */}
+          <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+            <button
+              onClick={toggleMode}
+              className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all ${mode === 'RECORD'
+                ? 'bg-red-500 text-white shadow-red-500/20'
+                : 'bg-emerald-500 text-white shadow-emerald-500/20'
+                }`}
+            >
+              {mode === 'RECORD' ? '🔴 REC Mode' : '▶️ PLAY Mode'}
+            </button>
+          </div>
+
+          {/* Inputs */}
+          <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Audio Source</label>
+              <input type="file" accept="audio/*" onChange={handleAudioSelect} className="text-xs w-full" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Score XML</label>
+              <input type="file" accept=".xml,.musicxml" onChange={handleXmlSelect} className="text-xs w-full" />
             </div>
           </div>
 
           {/* Anchors List */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center bg-white">
-              <h2 className="text-lg font-semibold text-gray-800">
-                Sync Anchors
-              </h2>
-              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-                {anchors.length} measures
-              </span>
-            </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-slate-50" ref={anchorListRef}>
+            {/* Logic to render anchors (Simulated for brevity, using same logic as before) */}
+            {(() => {
+              const maxMeasure = anchors.length > 0 ? Math.max(...anchors.map(a => a.measure)) : 0
+              const rows = []
+              for (let m = 1; m <= maxMeasure; m++) {
+                const anchor = anchors.find(a => a.measure === m)
+                const isActive = m === currentMeasure
 
-            <div
-              ref={anchorListRef}
-              className="flex-1 overflow-y-auto p-4 space-y-2"
-            >
-              {(() => {
-                if (anchors.length === 0) return null
-
-                // Find the highest measure number we know about
-                const maxMeasure = Math.max(...anchors.map(a => a.measure))
-                const rows = []
-
-                // Loop through 1 to MaxMeasure
-                for (let m = 1; m <= maxMeasure; m++) {
-                  const anchor = anchors.find(a => a.measure === m)
-                  const isMeasureOne = m === 1
-
-                  const isActive = m === currentMeasure
-
-                  if (anchor) {
-                    rows.push(
-                      <div
-                        key={m}
-                        // NEW: Attach ref only if this is the active row
-                        ref={isActive ? activeRowRef : null}
-                        onClick={() => handleJumpToMeasure(anchor.time)}
-                        // NEW: Dynamic Styling for Active State (Orange)
-                        className={`
-                          cursor-pointer px-3 py-2 text-sm flex items-center justify-between border rounded-md transition-all duration-200
-                          ${isActive
-                            ? 'bg-orange-50 border-orange-300 shadow-sm ring-1 ring-orange-200'
-                            : 'bg-white border-gray-200 hover:bg-blue-50 hover:border-blue-300'
-                          }
-                        `}
-                      >
-                        <span className={`font-medium ${isActive ? 'text-orange-700 font-bold' : 'text-gray-600'}`}>
-                          Measure {m}:
-                        </span>
-
-                        <div className="flex items-center gap-2">
-                          {/* Time Display/Input */}
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={anchor.time.toFixed(2)}
-                            onChange={(e) => upsertAnchor(m, parseFloat(e.target.value))}
-                            disabled={mode !== 'RECORD' || isMeasureOne}
-                            className="w-16 text-right font-mono border rounded px-1"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <span className="text-gray-400 text-xs">s</span>
-
-                          {/* Delete Button (X) */}
-                          {!isMeasureOne && mode === 'RECORD' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleDelete(m)
-                              }}
-                              className="ml-2 text-gray-400 hover:text-red-500 font-bold px-2"
-                              title="Un-sync this measure"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  } else {
-                    // === RENDER "GHOST" ROW (Missing Anchor) ===
-                    rows.push(
-                      <div
-                        key={m}
-                        // Optional: Highlight ghost rows too if you traverse them?
-                        ref={isActive ? activeRowRef : null}
-                        className={`
-                           border border-dashed rounded-md px-3 py-2 text-sm flex items-center justify-between transition-colors
-                           ${isActive
-                            ? 'bg-orange-50 border-orange-300' // Active Ghost
-                            : 'bg-red-50 border-red-300'       // Inactive Ghost
-                          }
-                         `}
-                      >
-                        <span className={`font-medium ${isActive ? 'text-red-500 font-bold' : 'text-red-400'}`}>
-                          Measure {m}
-                        </span>
-
-                        {mode === 'RECORD' ? (
-                          <button
-                            onClick={() => handleRestamp(m)}
-                            className="text-xs bg-red-100 text-red-600 border border-red-200 px-2 py-1 rounded hover:bg-red-200 transition-colors"
-                          >
-                            📍 Set to Current Time
-                          </button>
-                        ) : (
-                          <span className="text-xs text-red-300 italic">Not Synced</span>
+                if (anchor) {
+                  rows.push(
+                    <div key={m} ref={isActive ? activeRowRef : null}
+                      className={`flex items-center justify-between p-2 rounded text-xs border ${isActive ? 'bg-orange-50 border-orange-300 ring-1 ring-orange-200' : 'bg-white border-gray-200'}`}
+                      onClick={() => handleJumpToMeasure(anchor.time)}
+                    >
+                      <span className={`font-mono font-bold ${isActive ? 'text-orange-600' : 'text-slate-500'}`}>M{m}</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number" step="0.01"
+                          value={anchor.time.toFixed(2)}
+                          onChange={(e) => upsertAnchor(m, parseFloat(e.target.value))}
+                          disabled={mode !== 'RECORD' || m === 1}
+                          className="w-16 text-right border rounded px-1 font-mono"
+                          onClick={e => e.stopPropagation()}
+                        />
+                        {m !== 1 && mode === 'RECORD' && (
+                          <button onClick={(e) => { e.stopPropagation(); handleDelete(m) }} className="text-slate-400 hover:text-red-500">×</button>
                         )}
                       </div>
-                    )
-                  }
+                    </div>
+                  )
+                } else {
+                  rows.push(
+                    <div key={m} className="flex items-center justify-between p-2 rounded text-xs border border-dashed border-red-200 bg-red-50 opacity-60">
+                      <span className="font-mono text-red-400">M{m} (Ghost)</span>
+                      {mode === 'RECORD' && (
+                        <button onClick={() => handleRestamp(m)} className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded">Fix</button>
+                      )}
+                    </div>
+                  )
                 }
-                return rows
-              })()}
-            </div>
+              }
+              return rows
+            })()}
+          </div>
+
+          {/* Footer Controls (Tap/Clear) */}
+          <div className="p-4 border-t border-gray-200 bg-white grid grid-cols-2 gap-2">
+            <button onClick={handleReset} disabled={mode !== 'RECORD'} className="py-2 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs font-bold">Clear All</button>
+            <button onClick={handleTap} disabled={mode !== 'RECORD'} className="py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-lg shadow-indigo-200">TAP (A)</button>
           </div>
         </aside>
 
-        {/* === MODULAR ISLAND === */}
-        {viewMode === 'SCROLL' && (
-          <ModularIsland
-            popEffect={popEffect}
-            setPopEffect={setPopEffect}
-            darkMode={darkMode}
-            setDarkMode={setDarkMode}
-            highlightNote={highlightNote}
-            setHighlightNote={setHighlightNote}
-            cursorPosition={cursorPosition}
-            setCursorPosition={setCursorPosition}
-          />
-        )}
       </div>
 
-      {/* Bottom Fixed Footer */}
-      <footer className="bg-slate-900 border-t border-slate-700 p-4 flex items-center gap-6 shadow-2xl z-20">
-        {/* Audio Element */}
+      {/* Global Footer (Audio Player) */}
+      <footer className="bg-slate-900 border-t border-slate-800 p-3 z-50">
         <audio
-          ref={audioRef}
-          controls
-          className="flex-grow h-10 rounded"
-          src={audioUrl}
+          ref={audioRef} controls src={audioUrl}
+          className="w-full h-8"
           onSeeked={handleSeeked}
           onEnded={handleEnded}
-          // NEW: Update sidebar highlighting 60fps-ish (or however fast audio updates)
           onTimeUpdate={() => {
-            if (audioRef.current) {
+            if (audioRef.current && anchors.length > 0) {
               const m = getCurrentMeasure(audioRef.current.currentTime)
               if (m !== currentMeasure) setCurrentMeasure(m)
             }
           }}
-        >
-          Your browser does not support the audio element.
-        </audio>
-
-        {/* Clear/Reset Button */}
-        <button
-          onClick={handleReset}
-          disabled={mode !== 'RECORD'}
-          className={`font-semibold px-6 py-3 rounded-lg shadow transition-all duration-150 ${mode === 'RECORD'
-            ? 'bg-slate-700 hover:bg-slate-600 text-white border border-slate-600'
-            : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-800'
-            }`}
-        >
-          Clear
-        </button>
-
-        {/* TAP Button */}
-        <button
-          onClick={handleTap}
-          disabled={mode !== 'RECORD'}
-          className={`font-bold text-xl px-12 py-3 rounded-lg shadow-lg border border-transparent transition-all duration-150 transform ${mode === 'RECORD'
-            ? 'bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white hover:scale-105 active:scale-95 shadow-indigo-500/30'
-            : 'bg-slate-800 text-slate-600 cursor-not-allowed border-slate-800'
-            }`}
-        >
-          TAP (Press "A")
-        </button>
+        />
       </footer>
     </div>
   )

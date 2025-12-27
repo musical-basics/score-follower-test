@@ -8,15 +8,17 @@ interface ModularIslandProps {
     setDarkMode: (val: boolean) => void
     highlightNote: boolean      // <--- NEW PROP
     setHighlightNote: (val: boolean) => void // <--- NEW PROP
-    cursorPosition: number          // <--- NEW PROP
+    cursorPosition: number
     setCursorPosition: (val: number) => void // <--- NEW PROP
+    onDock: () => void // <--- NEW PROP
 }
 
 export function ModularIsland({
     popEffect, setPopEffect,
     darkMode, setDarkMode,
     highlightNote, setHighlightNote,
-    cursorPosition, setCursorPosition
+    cursorPosition, setCursorPosition,
+    onDock
 }: ModularIslandProps) {
     const [position, setPosition] = useState({ x: window.innerWidth - 250, y: 100 })
     const [isDragging, setIsDragging] = useState(false)
@@ -81,8 +83,8 @@ export function ModularIsland({
             style={{ left: position.x, top: position.y, width: 'max-content' }}
         >
             <div className={`
-                bg-slate-800/90 backdrop-blur-md text-white p-3 rounded-2xl 
-                shadow-2xl border border-slate-600 flex flex-col gap-3 
+                bg-slate-800/90 backdrop-blur-md text-white p-3 rounded-2xl
+                shadow-2xl border border-slate-600 flex flex-col gap-3
                 transition-transform hover:scale-105
                 ${isDragging ? 'scale-105 ring-2 ring-emerald-500/50' : ''}
             `}>
@@ -96,49 +98,53 @@ export function ModularIsland({
                             </svg>
                         </div>
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                            Visual FX
+                            Floating Controls
                         </span>
                     </div>
 
-                    {/* Dark Mode */}
+                    {/* DOCK BUTTON */}
                     <button
                         onMouseDown={(e) => e.stopPropagation()}
-                        onClick={() => setDarkMode(!darkMode)}
-                        className={`p-1.5 rounded-lg transition-all ${darkMode ? 'bg-slate-600 text-yellow-300' : 'bg-slate-700 text-slate-300'}`}
+                        onClick={onDock}
+                        title="Dock to Menu Bar"
+                        className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all"
                     >
-                        {darkMode ? '🌙' : '☀️'}
+                        ↘
                     </button>
                 </div>
 
                 <div className="h-px w-full bg-slate-600"></div>
 
-                <div className="flex items-center gap-2">
-                    {/* Highlight Toggle */}
+                {/* Controls Row 1 */}
+                <div className="flex items-center justify-between gap-2">
+                    <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => setDarkMode(!darkMode)}
+                        className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-all ${darkMode ? 'bg-slate-600 text-yellow-300' : 'bg-slate-700 text-slate-300'}`}
+                    >
+                        {darkMode ? '🌙 Dark' : '☀️ Light'}
+                    </button>
+
                     <button
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={() => setHighlightNote(!highlightNote)}
                         className={`
-                            px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1
-                            ${highlightNote
-                                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30'
-                                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}
+                            flex-1 py-1.5 rounded-lg text-sm font-medium transition-all
+                            ${highlightNote ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-400'}
                         `}
                     >
-                        <span>🎨 Color</span>
+                        Color
                     </button>
 
-                    {/* Pop Effect Toggle */}
                     <button
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={() => setPopEffect(!popEffect)}
                         className={`
-                            px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1
-                            ${popEffect
-                                ? 'bg-pink-600 text-white shadow-lg shadow-pink-500/30'
-                                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}
+                            flex-1 py-1.5 rounded-lg text-sm font-medium transition-all
+                            ${popEffect ? 'bg-pink-600 text-white' : 'bg-slate-700 text-slate-400'}
                         `}
                     >
-                        <span>💥 Pop</span>
+                        Pop
                     </button>
                 </div>
 
