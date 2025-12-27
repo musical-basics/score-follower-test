@@ -13,6 +13,7 @@ interface ScoreViewerProps {
     mode: AppMode
     musicXmlUrl?: string
     revealMode: 'OFF' | 'NOTE' | 'CURTAIN'
+    popEffect: boolean
 }
 
 type NoteData = {
@@ -23,7 +24,7 @@ type NoteData = {
     stemElement: HTMLElement | null
 }
 
-export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode }: ScoreViewerProps) {
+export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect }: ScoreViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
@@ -408,12 +409,19 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                     // Color & Scale Logic
                     if (highlightProgress <= noteEndThreshold && highlightProgress >= noteData.timestamp - lookahead) {
                         applyColor(noteData.element, '#10B981')
-                        // POP IT! (Scale 1.5x)
-                        noteData.element.style.transform = 'scale(1.5)'
+
+                        // === POP EFFECT LOGIC ===
+                        if (popEffect) {
+                            noteData.element.style.transform = 'scale(1.5)'
+                        }
+
                     } else {
                         applyColor(noteData.element, '#000000')
+
                         // Reset Size
-                        noteData.element.style.transform = 'scale(1)'
+                        if (popEffect) {
+                            noteData.element.style.transform = 'scale(1)'
+                        }
                     }
                 })
             }
@@ -423,7 +431,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                 notesInMeasure.forEach(noteData => {
                     if (noteData.element) {
                         applyColor(noteData.element, '#000000')
-                        noteData.element.style.transform = 'scale(1)' // Reset scale
+                        if (popEffect) noteData.element.style.transform = 'scale(1)' // Reset scale
                     }
                 })
             }
@@ -431,7 +439,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
         } catch (err) {
             console.error('Error positioning cursor:', err)
         }
-    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility])
+    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect])
 
     // ... (Animation Loop)
     useEffect(() => {

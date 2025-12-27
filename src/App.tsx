@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import './App.css'
 import { ScoreViewer } from './components/ScoreViewer'
 import { ScoreViewerScroll } from './components/ScoreViewerScroll'
+import { ModularIsland } from './components/ModularIsland'
 import { projectService, type Project } from './services/projectService'
 
 interface Anchor {
@@ -21,6 +22,7 @@ const DEFAULT_XML = '/c-major-exercise.musicxml'
 function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('PAGE')
   const [revealMode, setRevealMode] = useState<'OFF' | 'NOTE' | 'CURTAIN'>('OFF')
+  const [popEffect, setPopEffect] = useState(false)
   const [anchors, setAnchors] = useState<Anchor[]>(INITIAL_ANCHORS)
   const [mode, setMode] = useState<AppMode>('PLAYBACK')
   const [projects, setProjects] = useState<Project[]>([])
@@ -405,7 +407,7 @@ function App() {
             {viewMode === 'PAGE' ? '📄 Page View' : '∞ Scroll View'}
           </button>
 
-          {/* Reveal Mode Toggle (Only in Scroll Mode) */}
+          {/* Reveal Mode Toggle (Restored) */}
           {viewMode === 'SCROLL' && (
             <button
               onClick={() => setRevealMode(prev => {
@@ -414,10 +416,10 @@ function App() {
                 return 'OFF'
               })}
               className={`px-3 py-1 rounded text-sm font-semibold border transition-colors ${revealMode === 'NOTE'
-                  ? 'bg-purple-600 border-purple-500 text-white shadow-[0_0_10px_rgba(147,51,234,0.5)]'
-                  : revealMode === 'CURTAIN'
-                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-[0_0_10px_rgba(79,70,229,0.5)]'
-                    : 'bg-slate-700 border-slate-600 text-gray-300 hover:bg-slate-600'
+                ? 'bg-purple-600 border-purple-500 text-white shadow-[0_0_10px_rgba(147,51,234,0.5)]'
+                : revealMode === 'CURTAIN'
+                  ? 'bg-indigo-600 border-indigo-500 text-white shadow-[0_0_10px_rgba(79,70,229,0.5)]'
+                  : 'bg-slate-700 border-slate-600 text-gray-300 hover:bg-slate-600'
                 }`}
             >
               {revealMode === 'OFF' && '👁️ Reveal OFF'}
@@ -425,6 +427,8 @@ function App() {
               {revealMode === 'CURTAIN' && '⬜ Curtain Mode'}
             </button>
           )}
+
+          {/* Reveal Mode Toggle (Removed - Moved to ModularIsland) */}
         </div>
       </header>
 
@@ -449,6 +453,7 @@ function App() {
               mode={mode}
               musicXmlUrl={xmlUrl}
               revealMode={revealMode}
+              popEffect={popEffect}
             />
           )}
         </main>
@@ -599,6 +604,14 @@ function App() {
             </div>
           </div>
         </aside>
+
+        {/* === MODULAR ISLAND === */}
+        {viewMode === 'SCROLL' && (
+          <ModularIsland
+            popEffect={popEffect}
+            setPopEffect={setPopEffect}
+          />
+        )}
       </div>
 
       {/* Bottom Fixed Footer */}
