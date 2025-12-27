@@ -213,7 +213,6 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl }: Scor
 
         try {
             const measureList = osmd.GraphicSheet.MeasureList
-
             if (!measureList || measureList.length === 0) return
             if (currentMeasureIndex >= measureList.length) return
 
@@ -227,34 +226,50 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl }: Scor
             let maxY = Number.MIN_VALUE
             let minX = Number.MAX_VALUE
             let maxX = Number.MIN_VALUE
+            let minNoteX = Number.MAX_VALUE
 
             measureStaves.forEach(staffMeasure => {
                 const pos = staffMeasure.PositionAndShape
                 if (!pos) return
-
                 const absoluteY = pos.AbsolutePosition.y
                 const absoluteX = pos.AbsolutePosition.x
 
                 const top = absoluteY + pos.BorderTop
                 const bottom = absoluteY + pos.BorderBottom
-
                 if (top < minY) minY = top
                 if (bottom > maxY) maxY = bottom
 
                 const left = absoluteX + pos.BorderLeft
                 const right = absoluteX + pos.BorderRight
-
                 if (left < minX) minX = left
                 if (right > maxX) maxX = right
+
+                if (staffMeasure.staffEntries.length > 0) {
+                    const firstEntry = staffMeasure.staffEntries[0]
+                    const noteAbsX = absoluteX + firstEntry.PositionAndShape.RelativePosition.x
+                    if (noteAbsX < minNoteX) minNoteX = noteAbsX
+                }
             })
 
             const systemTop = minY * unitInPixels
             const systemHeight = (maxY - minY) * unitInPixels
-            const systemX = minX * unitInPixels
-            const systemWidth = (maxX - minX) * unitInPixels
+
+            // === FIX 1: Correct Padding Math (Pixels -> Units) ===
+            const paddingPixels = 12
+            const paddingUnits = paddingPixels / unitInPixels // Convert pixels to units!
+
+            let visualStartX = minX
+            if (measure === 1 && minNoteX < Number.MAX_VALUE) {
+                // Now we subtract UNITS from UNITS
+                visualStartX = Math.max(minX, minNoteX - paddingUnits)
+            }
+
+            const systemX = visualStartX * unitInPixels
+            const systemWidth = (maxX - visualStartX) * unitInPixels
 
             const cursorX = systemX + (systemWidth * effectiveProgress)
 
+            // Update Cursor DOM
             cursorRef.current.style.left = `${cursorX}px`
             cursorRef.current.style.top = `${systemTop}px`
             cursorRef.current.style.height = `${systemHeight}px`
@@ -267,29 +282,31 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl }: Scor
                 ? '0 0 10px rgba(239, 68, 68, 0.4)'
                 : '0 0 8px rgba(16, 185, 129, 0.5)'
 
-            // === HORIZONTAL SCROLL LOGIC ===
+            // === FIX 2: Restore Continuous "Conveyor Belt" Scroll ===
             if (scrollContainerRef.current) {
                 const container = scrollContainerRef.current
                 const containerWidth = container.clientWidth
+
+                // Target: Keep cursor at 20% of the screen width
+                const targetScrollLeft = cursorX - (containerWidth * 0.2)
+
+                // Detection: Is the user fighting the scroll?
                 const currentScroll = container.scrollLeft
-                const cursorScreenX = cursorX - currentScroll
+                const diff = Math.abs(currentScroll - targetScrollLeft)
+                const isUserControlling = diff > 250 // Give them 250px of slack to look around
 
-                // 1. Measure Change Check (The "Page Turn")
-                // We ONLY scroll when the measure actually changes.
-                // This prevents the "fighting" sensation while scrolling within a measure.
+                // 1. If user is NOT fighting, lock the camera (Conveyor Belt)
+                // We check this every frame, NOT just on measure change.
+                if (!isUserControlling) {
+                    container.scrollLeft = targetScrollLeft
+                }
+
+                // 2. If the Measure Changed (e.g. Loop/Jump), force a snap back
+                //    even if they were looking away.
                 if (currentMeasureIndex !== lastMeasureIndexRef.current) {
-
-                    // 2. "Smart Snap": Only snap if the cursor is actually visible or close.
-                    // If you scrolled WAY back to Measure 1 (while music is at M50), 
-                    // we assume you want to stay there, so we DON'T snap.
-                    // "Close" = within 2 screen widths.
-                    const isReadingHistory = cursorScreenX > (containerWidth * 2)
-
-                    if (!isReadingHistory) {
-                        // Snap the cursor to the 20% mark (left-ish side of screen)
-                        // so you have plenty of space to read ahead.
+                    if (diff > 50) {
                         container.scrollTo({
-                            left: cursorX - (containerWidth * 0.2),
+                            left: targetScrollLeft,
                             behavior: 'smooth'
                         })
                     }
@@ -302,12 +319,20 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl }: Scor
             const notesInMeasure = noteMap.current.get(measure)
 
             if (notesInMeasure && mode === 'PLAYBACK') {
+                const fullMeasureWidth = maxX - minX
+                const activeWidth = maxX - visualStartX
+                const startOffset = visualStartX - minX
+
+                const offsetRatio = fullMeasureWidth > 0 ? startOffset / fullMeasureWidth : 0
+                const scaleRatio = fullMeasureWidth > 0 ? activeWidth / fullMeasureWidth : 1
+                const highlightProgress = offsetRatio + (effectiveProgress * scaleRatio)
+
                 notesInMeasure.forEach(noteData => {
                     if (!noteData.element) return
                     const lookahead = 0.04
                     const noteEndThreshold = noteData.timestamp + 0.01
 
-                    if (effectiveProgress <= noteEndThreshold && effectiveProgress >= noteData.timestamp - lookahead) {
+                    if (highlightProgress <= noteEndThreshold && highlightProgress >= noteData.timestamp - lookahead) {
                         applyColor(noteData.element, '#10B981')
                     } else {
                         applyColor(noteData.element, '#000000')
@@ -315,12 +340,10 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl }: Scor
                 })
             }
 
-            if (mode === 'RECORD') {
-                if (notesInMeasure) {
-                    notesInMeasure.forEach(noteData => {
-                        if (noteData.element) applyColor(noteData.element, '#000000')
-                    })
-                }
+            if (mode === 'RECORD' && notesInMeasure) {
+                notesInMeasure.forEach(noteData => {
+                    if (noteData.element) applyColor(noteData.element, '#000000')
+                })
             }
 
         } catch (err) {

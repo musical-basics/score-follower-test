@@ -260,6 +260,7 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
             let maxY = Number.MIN_VALUE
             let minX = Number.MAX_VALUE
             let maxX = Number.MIN_VALUE
+            let minNoteX = Number.MAX_VALUE
 
             // Loop through every instrument/stave in this vertical slice
             measureStaves.forEach(staffMeasure => {
@@ -277,19 +278,41 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
                 if (top < minY) minY = top
                 if (bottom > maxY) maxY = bottom
 
-                // We also need the X positions (they should be roughly aligned, but good to be safe)
+                // We also need the X positions
                 const left = absoluteX + pos.BorderLeft
                 const right = absoluteX + pos.BorderRight
 
                 if (left < minX) minX = left
                 if (right > maxX) maxX = right
+
+                // --- NEW LOGIC: Find the X position of the FIRST NOTE ---
+                if (staffMeasure.staffEntries.length > 0) {
+                    const firstEntry = staffMeasure.staffEntries[0]
+                    const noteAbsX = absoluteX + firstEntry.PositionAndShape.RelativePosition.x
+                    if (noteAbsX < minNoteX) minNoteX = noteAbsX
+                }
             })
 
             // Convert to pixels
             const systemTop = minY * unitInPixels
             const systemHeight = (maxY - minY) * unitInPixels
-            const systemX = minX * unitInPixels
-            const systemWidth = (maxX - minX) * unitInPixels
+
+            // === THE FIX: Adjust Start Position & Highlighting Coordinates ===
+
+            // 1. Determine where the cursor actually starts visually
+            // For Measure 1: Start at First Note (minNoteX) minus a little padding
+            // For others: Start at Barline (minX)
+            const paddingPixels = 12
+            const paddingUnits = paddingPixels / unitInPixels
+
+            let visualStartX = minX
+
+            if (measure === 1 && minNoteX < Number.MAX_VALUE) {
+                visualStartX = Math.max(minX, minNoteX - paddingUnits)
+            }
+
+            const systemX = visualStartX * unitInPixels
+            const systemWidth = (maxX - visualStartX) * unitInPixels
 
             // Apply interpolation
             const cursorX = systemX + (systemWidth * effectiveProgress)
@@ -334,18 +357,35 @@ export function ScoreViewer({ audioRef, anchors, mode, musicXmlUrl }: ScoreViewe
             // Update history for next frame
             lastMeasureIndexRef.current = currentMeasureIndex
 
-            // === KARAOKE HIGHLIGHTING (Master Time Grid) ===
+            // === KARAOKE HIGHLIGHTING (Fixed Coordinate System) ===
             // 1. Get notes for the current measure
             const notesInMeasure = noteMap.current.get(measure)
 
             if (notesInMeasure && mode === 'PLAYBACK') {
+                // We need to map "effectiveProgress" (Cursor System) back to "Measure System"
+                // because notes are stored relative to the FULL measure width (minX -> maxX).
+
+                const fullMeasureWidth = maxX - minX
+                const activeWidth = maxX - visualStartX
+                const startOffset = visualStartX - minX
+
+                // Ratio of the "Dead Zone" (Clef/KeySig) vs Full Width
+                const offsetRatio = fullMeasureWidth > 0 ? startOffset / fullMeasureWidth : 0
+                // Ratio of the "Playable Area" vs Full Width
+                const scaleRatio = fullMeasureWidth > 0 ? activeWidth / fullMeasureWidth : 1
+
+                // Convert Audio Progress -> Measure Progress
+                // e.g., Audio 0% -> Measure 20% (exactly where Note 1 is)
+                const highlightProgress = offsetRatio + (effectiveProgress * scaleRatio)
+
                 notesInMeasure.forEach(noteData => {
                     if (!noteData.element) return
 
                     const lookahead = 0.04
                     const noteEndThreshold = noteData.timestamp + 0.01
 
-                    if (effectiveProgress <= noteEndThreshold && effectiveProgress >= noteData.timestamp - lookahead) {
+                    // Use the ADJUSTED progress here
+                    if (highlightProgress <= noteEndThreshold && highlightProgress >= noteData.timestamp - lookahead) {
                         applyColor(noteData.element, '#10B981')
                     } else {
                         applyColor(noteData.element, '#000000')
