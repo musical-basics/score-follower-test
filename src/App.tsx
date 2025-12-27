@@ -278,9 +278,17 @@ function App() {
 
       {/* 1. MAIN HEADER (Global App Controls) */}
       <div className="flex items-center justify-between px-6 py-3 bg-slate-900 text-white border-b border-slate-800 z-50">
-        <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-          Score Follower
-        </h1>
+        <div className="flex items-center gap-6">
+          <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+            Score Follower
+          </h1>
+
+          {/* Project Name Badge */}
+          <div className="flex items-center px-3 py-1 bg-slate-800 rounded border border-slate-700 text-xs">
+            <span className="text-slate-500 mr-2 uppercase tracking-wider font-bold">Project:</span>
+            <span className="font-mono text-emerald-400">{currentProjectTitle || 'Untitled'}</span>
+          </div>
+        </div>
         <div className="flex items-center gap-4">
 
           {/* Load/Save Group */}
@@ -334,10 +342,10 @@ function App() {
 
       {/* 2. SUBMENU (UX Controls) - Only visible if NOT in Island Mode */}
       {viewMode === 'SCROLL' && !isIslandMode && (
-        <div className="flex items-center justify-between px-6 py-2 bg-slate-100 border-b border-slate-200 text-slate-700 shadow-sm z-40">
+        <div className={`flex items-center justify-between px-6 py-2 border-b shadow-sm z-40 transition-colors duration-300 ${darkMode ? 'bg-[#2a2a2a] border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-200 text-slate-700'}`}>
 
           {/* Left: Reveal Modes */}
-          <div className="flex items-center gap-1 bg-slate-200 p-1 rounded-lg">
+          <div className={`flex items-center gap-1 p-1 rounded-lg ${darkMode ? 'bg-slate-800' : 'bg-slate-200'}`}>
             {(['OFF', 'NOTE', 'CURTAIN'] as const).map(m => (
               <button
                 key={m}
@@ -345,8 +353,8 @@ function App() {
                 className={`
                               px-3 py-1 rounded-md text-xs font-bold transition-all
                               ${revealMode === m
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'}
+                    ? (darkMode ? 'bg-slate-600 text-white shadow-sm' : 'bg-white text-slate-900 shadow-sm')
+                    : (darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')}
                           `}
               >
                 {m === 'OFF' ? 'Normal' : m === 'NOTE' ? 'Note Reveal' : 'Curtain'}
@@ -356,19 +364,19 @@ function App() {
 
           {/* Center: Visual Toggles */}
           <div className="flex items-center gap-4">
-            <button onClick={() => setDarkMode(!darkMode)} className="flex items-center gap-2 text-sm font-medium hover:text-slate-900 transition-colors">
-              <span className={darkMode ? 'text-slate-900' : 'text-slate-400'}>{darkMode ? '🌙' : '☀️'}</span>
-              <span>Dark Mode</span>
+            <button onClick={() => setDarkMode(!darkMode)} className={`flex items-center gap-2 text-sm font-medium transition-colors ${darkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}>
+              <span>{darkMode ? '🌙' : '☀️'}</span>
+              <span>{darkMode ? 'Dark Mode' : 'Light Mode'}</span>
             </button>
 
-            <div className="w-px h-4 bg-slate-300"></div>
+            <div className={`w-px h-4 ${darkMode ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
 
-            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer hover:text-emerald-600 transition-colors">
+            <label className={`flex items-center gap-2 text-sm font-medium cursor-pointer transition-colors ${darkMode ? 'text-slate-300 hover:text-emerald-400' : 'text-slate-700 hover:text-emerald-600'}`}>
               <input type="checkbox" checked={highlightNote} onChange={e => setHighlightNote(e.target.checked)} className="accent-emerald-500" />
               Highlight
             </label>
 
-            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer hover:text-pink-600 transition-colors">
+            <label className={`flex items-center gap-2 text-sm font-medium cursor-pointer transition-colors ${darkMode ? 'text-slate-300 hover:text-pink-400' : 'text-slate-700 hover:text-pink-600'}`}>
               <input type="checkbox" checked={popEffect} onChange={e => setPopEffect(e.target.checked)} className="accent-pink-500" />
               Pop Effect
             </label>
@@ -377,7 +385,7 @@ function App() {
           {/* Right: Cursor & Breakout */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-slate-400">Cursor</span>
+              <span className={`text-xs font-mono ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Cursor</span>
               <input
                 type="range" min="0.2" max="0.8" step="0.01"
                 value={cursorPosition}
@@ -386,13 +394,13 @@ function App() {
               />
             </div>
 
-            <div className="w-px h-4 bg-slate-300"></div>
+            <div className={`w-px h-4 ${darkMode ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
 
             {/* BREAKOUT BUTTON */}
             <button
               onClick={() => setIsIslandMode(true)}
               title="Detach Controls (Float)"
-              className="p-1.5 hover:bg-slate-200 rounded text-slate-500 hover:text-slate-900 transition-colors"
+              className={`p-1.5 rounded transition-colors ${darkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-900'}`}
             >
               ↗
             </button>
@@ -430,10 +438,10 @@ function App() {
         </div>
 
         {/* Sidebar (Sync Anchors) */}
-        <aside className="w-[320px] bg-white border-l border-gray-300 flex flex-col shadow-xl z-30">
+        <aside className={`w-[320px] border-l flex flex-col shadow-xl z-30 transition-colors duration-300 ${darkMode ? 'bg-[#1a1a1a] border-slate-800' : 'bg-white border-gray-300'}`}>
 
           {/* Playback Controls / Mode Toggle */}
-          <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+          <div className={`p-4 border-b flex items-center gap-2 ${darkMode ? 'border-slate-800 bg-[#222222]' : 'border-gray-200 bg-gray-50'}`}>
             <button
               onClick={toggleMode}
               className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all ${mode === 'RECORD'
@@ -446,19 +454,19 @@ function App() {
           </div>
 
           {/* Inputs */}
-          <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
+          <div className={`p-4 border-b space-y-3 ${darkMode ? 'border-slate-800 bg-[#222222]' : 'border-gray-200 bg-gray-50'}`}>
             <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Audio Source</label>
-              <input type="file" accept="audio/*" onChange={handleAudioSelect} className="text-xs w-full" />
+              <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Audio Source</label>
+              <input type="file" accept="audio/*" onChange={handleAudioSelect} className={`text-xs w-full ${darkMode ? 'text-slate-300' : ''}`} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Score XML</label>
-              <input type="file" accept=".xml,.musicxml" onChange={handleXmlSelect} className="text-xs w-full" />
+              <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Score XML</label>
+              <input type="file" accept=".xml,.musicxml" onChange={handleXmlSelect} className={`text-xs w-full ${darkMode ? 'text-slate-300' : ''}`} />
             </div>
           </div>
 
           {/* Anchors List */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-slate-50" ref={anchorListRef}>
+          <div className={`flex-1 overflow-y-auto p-2 space-y-1 ${darkMode ? 'bg-[#1a1a1a]' : 'bg-slate-50'}`} ref={anchorListRef}>
             {/* Logic to render anchors (Simulated for brevity, using same logic as before) */}
             {(() => {
               const maxMeasure = anchors.length > 0 ? Math.max(...anchors.map(a => a.measure)) : 0
@@ -470,31 +478,31 @@ function App() {
                 if (anchor) {
                   rows.push(
                     <div key={m} ref={isActive ? activeRowRef : null}
-                      className={`flex items-center justify-between p-2 rounded text-xs border ${isActive ? 'bg-orange-50 border-orange-300 ring-1 ring-orange-200' : 'bg-white border-gray-200'}`}
+                      className={`flex items-center justify-between p-2 rounded text-xs border ${isActive ? (darkMode ? 'bg-orange-900/30 border-orange-600 ring-1 ring-orange-500/30' : 'bg-orange-50 border-orange-300 ring-1 ring-orange-200') : (darkMode ? 'bg-[#222222] border-slate-700' : 'bg-white border-gray-200')}`}
                       onClick={() => handleJumpToMeasure(anchor.time)}
                     >
-                      <span className={`font-mono font-bold ${isActive ? 'text-orange-600' : 'text-slate-500'}`}>M{m}</span>
+                      <span className={`font-mono font-bold ${isActive ? 'text-orange-500' : (darkMode ? 'text-slate-300' : 'text-slate-500')}`}>M{m}</span>
                       <div className="flex items-center gap-2">
                         <input
                           type="number" step="0.01"
                           value={anchor.time.toFixed(2)}
                           onChange={(e) => upsertAnchor(m, parseFloat(e.target.value))}
                           disabled={mode !== 'RECORD' || m === 1}
-                          className="w-16 text-right border rounded px-1 font-mono"
+                          className={`w-16 text-right border rounded px-1 font-mono ${darkMode ? 'bg-slate-800 border-slate-600 text-emerald-400' : 'bg-white border-gray-300'}`}
                           onClick={e => e.stopPropagation()}
                         />
                         {m !== 1 && mode === 'RECORD' && (
-                          <button onClick={(e) => { e.stopPropagation(); handleDelete(m) }} className="text-slate-400 hover:text-red-500">×</button>
+                          <button onClick={(e) => { e.stopPropagation(); handleDelete(m) }} className={`${darkMode ? 'text-slate-500 hover:text-red-400' : 'text-slate-400 hover:text-red-500'}`}>×</button>
                         )}
                       </div>
                     </div>
                   )
                 } else {
                   rows.push(
-                    <div key={m} className="flex items-center justify-between p-2 rounded text-xs border border-dashed border-red-200 bg-red-50 opacity-60">
-                      <span className="font-mono text-red-400">M{m} (Ghost)</span>
+                    <div key={m} className={`flex items-center justify-between p-2 rounded text-xs border border-dashed opacity-60 ${darkMode ? 'border-red-800 bg-red-900/20' : 'border-red-200 bg-red-50'}`}>
+                      <span className={`font-mono ${darkMode ? 'text-red-400' : 'text-red-400'}`}>M{m} (Ghost)</span>
                       {mode === 'RECORD' && (
-                        <button onClick={() => handleRestamp(m)} className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded">Fix</button>
+                        <button onClick={() => handleRestamp(m)} className={`text-[10px] px-2 py-0.5 rounded ${darkMode ? 'bg-red-900/50 text-red-400' : 'bg-red-100 text-red-600'}`}>Fix</button>
                       )}
                     </div>
                   )
@@ -505,9 +513,9 @@ function App() {
           </div>
 
           {/* Footer Controls (Tap/Clear) */}
-          <div className="p-4 border-t border-gray-200 bg-white grid grid-cols-2 gap-2">
-            <button onClick={handleReset} disabled={mode !== 'RECORD'} className="py-2 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs font-bold">Clear All</button>
-            <button onClick={handleTap} disabled={mode !== 'RECORD'} className="py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-lg shadow-indigo-200">TAP (A)</button>
+          <div className={`p-4 border-t grid grid-cols-2 gap-2 ${darkMode ? 'border-slate-800 bg-[#222222]' : 'border-gray-200 bg-white'}`}>
+            <button onClick={handleReset} disabled={mode !== 'RECORD'} className={`py-2 rounded border text-xs font-bold ${darkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>Clear All</button>
+            <button onClick={handleTap} disabled={mode !== 'RECORD'} className="py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-lg shadow-indigo-500/20">TAP (A)</button>
           </div>
         </aside>
 
