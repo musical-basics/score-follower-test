@@ -16,6 +16,7 @@ interface ScoreViewerProps {
     popEffect: boolean
     darkMode: boolean
     highlightNote: boolean
+    cursorPosition: number
 }
 
 type NoteData = {
@@ -26,7 +27,7 @@ type NoteData = {
     stemElement: HTMLElement | null
 }
 
-export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, darkMode, highlightNote }: ScoreViewerProps) {
+export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, darkMode, highlightNote, cursorPosition }: ScoreViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
@@ -369,11 +370,14 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
             cursorRef.current.style.backgroundColor = mode === 'RECORD' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(16, 185, 129, 0.8)'
             cursorRef.current.style.boxShadow = mode === 'RECORD' ? '0 0 10px rgba(239, 68, 68, 0.4)' : '0 0 8px rgba(16, 185, 129, 0.5)'
 
-            // 2. Scroll Logic
+            // 2. Scroll Logic (UPDATED)
             if (scrollContainerRef.current) {
                 const container = scrollContainerRef.current
                 const containerWidth = container.clientWidth
-                const targetScrollLeft = cursorX - (containerWidth * 0.2)
+
+                // DYNAMIC TARGET: Use user defined percentage
+                const targetScrollLeft = cursorX - (containerWidth * cursorPosition)
+
                 const currentScroll = container.scrollLeft
                 const diff = Math.abs(currentScroll - targetScrollLeft)
                 const isUserControlling = diff > 250
@@ -496,7 +500,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
         } catch (err) {
             console.error('Error positioning cursor:', err)
         }
-    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect, darkMode, highlightNote])
+    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect, darkMode, highlightNote, cursorPosition])
 
     // ... (Animation Loop)
     useEffect(() => {

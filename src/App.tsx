@@ -25,6 +25,7 @@ function App() {
   const [popEffect, setPopEffect] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
   const [highlightNote, setHighlightNote] = useState(true)
+  const [cursorPosition, setCursorPosition] = useState(0.2)
   const [anchors, setAnchors] = useState<Anchor[]>(INITIAL_ANCHORS)
   const [mode, setMode] = useState<AppMode>('PLAYBACK')
   const [projects, setProjects] = useState<Project[]>([])
@@ -458,6 +459,7 @@ function App() {
               popEffect={popEffect}
               darkMode={darkMode}
               highlightNote={highlightNote}
+              cursorPosition={cursorPosition}
             />
           )}
         </main>
@@ -618,6 +620,8 @@ function App() {
             setDarkMode={setDarkMode}
             highlightNote={highlightNote}
             setHighlightNote={setHighlightNote}
+            cursorPosition={cursorPosition}
+            setCursorPosition={setCursorPosition}
           />
         )}
       </div>

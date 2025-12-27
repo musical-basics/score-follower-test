@@ -8,12 +8,15 @@ interface ModularIslandProps {
     setDarkMode: (val: boolean) => void
     highlightNote: boolean      // <--- NEW PROP
     setHighlightNote: (val: boolean) => void // <--- NEW PROP
+    cursorPosition: number          // <--- NEW PROP
+    setCursorPosition: (val: number) => void // <--- NEW PROP
 }
 
 export function ModularIsland({
     popEffect, setPopEffect,
     darkMode, setDarkMode,
-    highlightNote, setHighlightNote
+    highlightNote, setHighlightNote,
+    cursorPosition, setCursorPosition
 }: ModularIslandProps) {
     const [position, setPosition] = useState({ x: window.innerWidth - 250, y: 100 })
     const [isDragging, setIsDragging] = useState(false)
@@ -78,58 +81,83 @@ export function ModularIsland({
             style={{ left: position.x, top: position.y, width: 'max-content' }}
         >
             <div className={`
-                bg-slate-800/90 backdrop-blur-md text-white p-2 rounded-2xl 
-                shadow-2xl border border-slate-600 flex items-center gap-2 
+                bg-slate-800/90 backdrop-blur-md text-white p-3 rounded-2xl 
+                shadow-2xl border border-slate-600 flex flex-col gap-3 
                 transition-transform hover:scale-105
                 ${isDragging ? 'scale-105 ring-2 ring-emerald-500/50' : ''}
             `}>
-                <div className="pl-2 pr-2 text-slate-500 cursor-move">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                        <circle cx="2" cy="2" r="2" /><circle cx="8" cy="2" r="2" /><circle cx="14" cy="2" r="2" />
-                        <circle cx="2" cy="8" r="2" /><circle cx="8" cy="8" r="2" /><circle cx="14" cy="8" r="2" />
-                        <circle cx="2" cy="14" r="2" /><circle cx="8" cy="14" r="2" /><circle cx="14" cy="14" r="2" />
-                    </svg>
+                <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-2">
+                        <div className="text-slate-500 cursor-move">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                                <circle cx="2" cy="2" r="2" /><circle cx="8" cy="2" r="2" /><circle cx="14" cy="2" r="2" />
+                                <circle cx="2" cy="8" r="2" /><circle cx="8" cy="8" r="2" /><circle cx="14" cy="8" r="2" />
+                                <circle cx="2" cy="14" r="2" /><circle cx="8" cy="14" r="2" /><circle cx="14" cy="14" r="2" />
+                            </svg>
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            Visual FX
+                        </span>
+                    </div>
+
+                    {/* Dark Mode */}
+                    <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => setDarkMode(!darkMode)}
+                        className={`p-1.5 rounded-lg transition-all ${darkMode ? 'bg-slate-600 text-yellow-300' : 'bg-slate-700 text-slate-300'}`}
+                    >
+                        {darkMode ? '🌙' : '☀️'}
+                    </button>
                 </div>
 
-                {/* Dark Mode */}
-                <button
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={() => setDarkMode(!darkMode)}
-                    title="Toggle Dark Mode"
-                    className={`p-2 rounded-xl transition-all ${darkMode ? 'bg-slate-600 text-yellow-300' : 'bg-slate-700 text-slate-300'}`}
-                >
-                    {darkMode ? '🌙' : '☀️'}
-                </button>
+                <div className="h-px w-full bg-slate-600"></div>
 
-                <div className="w-px h-6 bg-slate-600 mx-1"></div>
+                <div className="flex items-center gap-2">
+                    {/* Highlight Toggle */}
+                    <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => setHighlightNote(!highlightNote)}
+                        className={`
+                            px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1
+                            ${highlightNote
+                                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30'
+                                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}
+                        `}
+                    >
+                        <span>🎨 Color</span>
+                    </button>
 
-                {/* Highlight Toggle */}
-                <button
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={() => setHighlightNote(!highlightNote)}
-                    className={`
-                        px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1
-                        ${highlightNote
-                            ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30'
-                            : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}
-                    `}
-                >
-                    <span>🎨 Color</span>
-                </button>
+                    {/* Pop Effect Toggle */}
+                    <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => setPopEffect(!popEffect)}
+                        className={`
+                            px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1
+                            ${popEffect
+                                ? 'bg-pink-600 text-white shadow-lg shadow-pink-500/30'
+                                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}
+                        `}
+                    >
+                        <span>💥 Pop</span>
+                    </button>
+                </div>
 
-                {/* Pop Effect Toggle */}
-                <button
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={() => setPopEffect(!popEffect)}
-                    className={`
-                        px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1
-                        ${popEffect
-                            ? 'bg-pink-600 text-white shadow-lg shadow-pink-500/30'
-                            : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}
-                    `}
-                >
-                    <span>💥 Pop</span>
-                </button>
+                {/* Cursor Position Slider */}
+                <div className="w-full pt-1" onMouseDown={(e) => e.stopPropagation()}>
+                    <div className="flex justify-between text-[10px] text-slate-400 mb-1 font-mono">
+                        <span>Cursor Pos</span>
+                        <span>{Math.round(cursorPosition * 100)}%</span>
+                    </div>
+                    <input
+                        type="range"
+                        min="0.2"
+                        max="0.8"
+                        step="0.01"
+                        value={cursorPosition}
+                        onChange={(e) => setCursorPosition(parseFloat(e.target.value))}
+                        className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                    />
+                </div>
             </div>
         </div>
     )
