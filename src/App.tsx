@@ -24,6 +24,7 @@ function App() {
   const [revealMode, setRevealMode] = useState<'OFF' | 'NOTE' | 'CURTAIN'>('OFF')
   const [popEffect, setPopEffect] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
+  const [highlightNote, setHighlightNote] = useState(true)
   const [anchors, setAnchors] = useState<Anchor[]>(INITIAL_ANCHORS)
   const [mode, setMode] = useState<AppMode>('PLAYBACK')
   const [projects, setProjects] = useState<Project[]>([])
@@ -456,6 +457,7 @@ function App() {
               revealMode={revealMode}
               popEffect={popEffect}
               darkMode={darkMode}
+              highlightNote={highlightNote}
             />
           )}
         </main>
@@ -614,6 +616,8 @@ function App() {
             setPopEffect={setPopEffect}
             darkMode={darkMode}
             setDarkMode={setDarkMode}
+            highlightNote={highlightNote}
+            setHighlightNote={setHighlightNote}
           />
         )}
       </div>

@@ -15,6 +15,7 @@ interface ScoreViewerProps {
     revealMode: 'OFF' | 'NOTE' | 'CURTAIN'
     popEffect: boolean
     darkMode: boolean
+    highlightNote: boolean
 }
 
 type NoteData = {
@@ -25,7 +26,7 @@ type NoteData = {
     stemElement: HTMLElement | null
 }
 
-export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, darkMode }: ScoreViewerProps) {
+export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, darkMode, highlightNote }: ScoreViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
@@ -219,16 +220,29 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
 
     // Helper: Coloring
     const applyColor = (element: HTMLElement, color: string) => {
+        if (!element) return
+
+        // 1. Target Children (Paths)
         const paths = element.getElementsByTagName('path')
         for (let i = 0; i < paths.length; i++) {
-            paths[i].setAttribute('fill', color)
-            paths[i].setAttribute('stroke', color)
+            const p = paths[i] as unknown as HTMLElement // Force cast for style access
+            p.style.fill = color
+            p.style.stroke = color
+            p.setAttribute('fill', color)
+            p.setAttribute('stroke', color)
         }
+
+        // 2. Target Children (Rects - for stems/bars)
         const rects = element.getElementsByTagName('rect')
         for (let i = 0; i < rects.length; i++) {
-            rects[i].setAttribute('fill', color)
-            rects[i].setAttribute('stroke', color)
+            const r = rects[i] as unknown as HTMLElement
+            r.style.fill = color
+            r.style.stroke = color
+            r.setAttribute('fill', color)
+            r.setAttribute('stroke', color)
         }
+
+        // 3. Target the Element Itself (if it's a path/rect)
         element.style.fill = color
         element.style.stroke = color
     }
@@ -439,6 +453,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                 const highlightProgress = offsetRatio + (effectiveProgress * scaleRatio)
 
                 const defaultColor = darkMode ? '#e0e0e0' : '#000000'
+                const activeColor = highlightNote ? '#10B981' : defaultColor
 
                 notesInMeasure.forEach(noteData => {
                     if (!noteData.element) return
@@ -447,8 +462,8 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
 
                     // Color & Scale Logic
                     if (highlightProgress <= noteEndThreshold && highlightProgress >= noteData.timestamp - lookahead) {
-                        applyColor(noteData.element, '#10B981')
-                        if (noteData.stemElement) applyColor(noteData.stemElement, '#10B981')
+                        applyColor(noteData.element, activeColor)
+                        if (noteData.stemElement) applyColor(noteData.stemElement, activeColor)
 
                         // === POP EFFECT LOGIC ===
                         if (popEffect) {
@@ -481,7 +496,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
         } catch (err) {
             console.error('Error positioning cursor:', err)
         }
-    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect])
+    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect, darkMode, highlightNote])
 
     // ... (Animation Loop)
     useEffect(() => {
