@@ -16,6 +16,8 @@ interface ScoreViewerProps {
     popEffect: boolean
     darkMode: boolean
     highlightNote: boolean
+    glowEffect: boolean         // <--- NEW PROP
+    jumpEffect: boolean         // <--- NEW PROP
     cursorPosition: number
 }
 
@@ -27,7 +29,7 @@ type NoteData = {
     stemElement: HTMLElement | null
 }
 
-export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, darkMode, highlightNote, cursorPosition }: ScoreViewerProps) {
+export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition }: ScoreViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
@@ -43,6 +45,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
     const noteMap = useRef<Map<number, NoteData[]>>(new Map())
     const measureContentMap = useRef<Map<number, HTMLElement[]>>(new Map())
     const staffLinesRef = useRef<HTMLElement[]>([])
+    const allSymbolsRef = useRef<HTMLElement[]>([]) // <--- NEW: Track ALL symbols for coloring
 
     // === 1. BUILD MAPS ===
     const calculateNoteMap = useCallback(() => {
@@ -52,7 +55,8 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
         console.log('[ScoreViewerScroll] Building Spatial Maps...')
         const newNoteMap = new Map<number, NoteData[]>()
         const newMeasureContentMap = new Map<number, HTMLElement[]>()
-        const newStaffLines: HTMLElement[] = []
+        const newAllSymbols: HTMLElement[] = [] // <--- For Dark Mode Coloring (Everything)
+        const newStaffLines: HTMLElement[] = [] // <--- For Staff Line Coloring
 
         const measureList = osmd.GraphicSheet.MeasureList
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -102,17 +106,25 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                                     let element = document.getElementById(vfId)
                                     if (!element) element = document.getElementById(`vf-${vfId}`)
                                     if (element) {
-                                        // === POP EFFECT SETUP ===
-                                        const el = element as HTMLElement
-                                        el.style.transformBox = 'fill-box'
-                                        el.style.transformOrigin = 'center'
-                                        el.style.transition = 'transform 0.1s ease-out, opacity 0.1s, fill 0.1s'
+                                        // Get Parent Group
+                                        const group = element.closest('.vf-stavenote') as HTMLElement || element as HTMLElement
+
+                                        // FIX: Setup Pop Effect on CHILDREN (Paths), not the Group.
+                                        // This prevents the "flying note" bug by scaling noteheads in-place.
+                                        const childPaths = group.querySelectorAll('path')
+                                        childPaths.forEach(p => {
+                                            const pathEl = p as unknown as HTMLElement // Force cast for style access
+                                            pathEl.style.transformBox = 'fill-box' // Pivot around itself
+                                            pathEl.style.transformOrigin = 'center' // Scale from center
+                                            // FIX: Removed 'filter' from transition to prevent "stuck" shadows
+                                            pathEl.style.transition = 'transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275), fill 0.1s, stroke 0.1s'
+                                        })
 
                                         measureNotes.push({
                                             id: vfId,
                                             measureIndex: measureNumber,
                                             timestamp: relativeTimestamp,
-                                            element: el,
+                                            element: group,
                                             stemElement: null
                                         })
                                     }
@@ -125,8 +137,31 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
             if (measureNotes.length > 0) newNoteMap.set(measureNumber, measureNotes)
         })
 
-        // C. UNIVERSAL CONTENT MAP (Visibility)
-        // Select ALL SVG elements to catch ledger lines, accidentals, text, etc.
+        // C. Stem Scanner
+        const allStems = Array.from(containerRef.current.querySelectorAll('.vf-stem'))
+        allStems.forEach(stem => {
+            const stemRect = stem.getBoundingClientRect()
+            const stemX = stemRect.left + (stemRect.width / 2)
+            let closestNote: NoteData | null = null
+            let minDist = 15
+            newNoteMap.forEach(notes => {
+                notes.forEach(note => {
+                    if (note.element) {
+                        const noteRect = note.element.getBoundingClientRect()
+                        const noteX = noteRect.left + (noteRect.width / 2)
+                        const dist = Math.abs(stemX - noteX)
+                        if (dist < minDist) {
+                            minDist = dist
+                            closestNote = note
+                        }
+                    }
+                })
+            })
+            if (closestNote) (closestNote as NoteData).stemElement = stem as HTMLElement
+        })
+
+        // D. UNIVERSAL CONTENT MAP (Visibility & Coloring)
+        // We select ALL paths/rects/text to ensure we capture Clefs, Key Sigs, Time Sigs, and Ledger Lines
         const selector = 'svg path, svg rect, svg text'
         const allElements = Array.from(containerRef.current.querySelectorAll(selector))
         const containerRect = containerRef.current.getBoundingClientRect()
@@ -138,38 +173,36 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
 
             if (style.opacity === '0' || style.display === 'none') return
 
-            // === SMART FILTER ===
-            // 1. Is it part of a musical symbol? (Beam, Note, Rest, Accidental, Stem)
-            // If it is, we MUST map it (so it gets hidden).
-            const isMusicSymbol = element.closest('.vf-stavenote, .vf-beam, .vf-rest, .vf-accidental, .vf-modifier, .vf-stem') !== null
+            // IDENTIFICATION:
+            // Check if it belongs to a known musical group (Beams, Notes, Clefs, etc)
+            const hasVexClass = element.closest('.vf-stavenote, .vf-beam, .vf-rest, .vf-clef, .vf-keysignature, .vf-timesignature, .vf-stem, .vf-modifier') !== null
 
-            if (!isMusicSymbol) {
-                // 2. If NOT a symbol, it might be a Staff Line or Barline.
-                // Staff Lines are WIDE (>50px) and VERY THIN (<3px).
-                // We tighter the height check to 3px to avoid grabbing thin beams.
-                const isWide = rect.width > 50
-                const isThin = rect.height < 3
+            // Detect Staff Lines (Wide & Thin)
+            const isWide = rect.width > 50
+            const isThin = rect.height < 3
 
-                // If it looks like a staff line, SAVE IT then RETURN
-                if (isWide && isThin) {
-                    newStaffLines.push(element)
-                    return
+            if (!hasVexClass && isWide && isThin) {
+                // It's a Staff Line -> Save for coloring, but DON'T bucket it
+                newStaffLines.push(element)
+            } else {
+                // It's a Symbol (Note, Ledger Line, Clef, Text, etc.)
+                // Save for coloring
+                newAllSymbols.push(element)
+
+                // Bucket into measure for "Note Reveal" Visibility
+                const elCenterX = (rect.left - containerRect.left) + (rect.width / 2)
+                const match = measureBounds.find(b => elCenterX >= b.left - 5 && elCenterX <= b.right + 5)
+                if (match) {
+                    if (!newMeasureContentMap.has(match.index)) newMeasureContentMap.set(match.index, [])
+                    newMeasureContentMap.get(match.index)!.push(element)
                 }
-            }
-
-            const elCenterX = (rect.left - containerRect.left) + (rect.width / 2)
-
-            // Bucket into measure
-            const match = measureBounds.find(b => elCenterX >= b.left - 5 && elCenterX <= b.right + 5)
-            if (match) {
-                if (!newMeasureContentMap.has(match.index)) newMeasureContentMap.set(match.index, [])
-                newMeasureContentMap.get(match.index)!.push(element)
             }
         })
 
         noteMap.current = newNoteMap
         measureContentMap.current = newMeasureContentMap
         staffLinesRef.current = newStaffLines
+        allSymbolsRef.current = newAllSymbols
     }, [])
 
     // ... (Init Effect)
@@ -284,11 +317,10 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
         const baseColor = darkMode ? '#e0e0e0' : '#000000'
         const bgColor = darkMode ? '#222222' : '#ffffff'
 
-        // 1. Color All Content Elements
-        if (measureContentMap.current) {
-            measureContentMap.current.forEach(elements => {
-                elements.forEach(el => applyColor(el, baseColor))
-            })
+        // 1. Color All Music Symbols (Robust Method)
+        // Use allSymbolsRef to guarantee we catch every beam/stem, even if bucketing failed
+        if (allSymbolsRef.current) {
+            allSymbolsRef.current.forEach(el => applyColor(el, baseColor))
         }
 
         // 2. Color Staff Lines
@@ -326,22 +358,28 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const unitInPixels = (osmd.GraphicSheet as any).UnitInPixels || 10
 
-            // 1. Calculate Cursor Geometry
-            let minY = Number.MAX_VALUE, maxY = Number.MIN_VALUE
-            let minX = Number.MAX_VALUE, maxX = Number.MIN_VALUE
+            // 1. Calculate Cursor Geometry (STABILIZED)
+            let firstStaffY = Number.MAX_VALUE
+            let lastStaffY = Number.MIN_VALUE
+            let minX = Number.MAX_VALUE
+            let maxX = Number.MIN_VALUE
             let minNoteX = Number.MAX_VALUE
 
             measureStaves.forEach(staffMeasure => {
                 const pos = staffMeasure.PositionAndShape
                 if (!pos) return
-                const absY = pos.AbsolutePosition.y
-                const absX = pos.AbsolutePosition.x
 
-                if (absY + pos.BorderTop < minY) minY = absY + pos.BorderTop
-                if (absY + pos.BorderBottom > maxY) maxY = absY + pos.BorderBottom
+                // Y-Axis: Track the STAFF LINES only (Stable)
+                const absY = pos.AbsolutePosition.y
+                if (absY < firstStaffY) firstStaffY = absY
+                if (absY > lastStaffY) lastStaffY = absY
+
+                // X-Axis: Track the Bounding Box (Variable width is okay)
+                const absX = pos.AbsolutePosition.x
                 if (absX + pos.BorderLeft < minX) minX = absX + pos.BorderLeft
                 if (absX + pos.BorderRight > maxX) maxX = absX + pos.BorderRight
 
+                // Note tracking for start offset
                 if (staffMeasure.staffEntries.length > 0) {
                     const firstEntry = staffMeasure.staffEntries[0]
                     const noteAbsX = absX + firstEntry.PositionAndShape.RelativePosition.x
@@ -349,20 +387,26 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                 }
             })
 
-            const systemTop = minY * unitInPixels
-            const systemHeight = (maxY - minY) * unitInPixels
+            // Calculate Fixed System Height (Stable)
+            // 4 units is roughly the height of a 5-line staff. We add padding around it.
+            const topPadding = 4
+            const bottomPadding = 8
+
+            const systemTop = (firstStaffY - topPadding) * unitInPixels
+            const systemHeight = ((lastStaffY - firstStaffY) + bottomPadding + topPadding) * unitInPixels
+
+            // Calculate Cursor X (Dynamic)
             const paddingPixels = 12
             const paddingUnits = paddingPixels / unitInPixels
             let visualStartX = minX
             if (measure === 1 && minNoteX < Number.MAX_VALUE) {
                 visualStartX = Math.max(minX, minNoteX - paddingUnits)
             }
-
             const systemX = visualStartX * unitInPixels
             const systemWidth = (maxX - visualStartX) * unitInPixels
             const cursorX = systemX + (systemWidth * effectiveProgress)
 
-            // Update Cursor
+            // Update Cursor DOM
             cursorRef.current.style.left = `${cursorX}px`
             cursorRef.current.style.top = `${systemTop}px`
             cursorRef.current.style.height = `${systemHeight}px`
@@ -370,7 +414,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
             cursorRef.current.style.backgroundColor = mode === 'RECORD' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(16, 185, 129, 0.8)'
             cursorRef.current.style.boxShadow = mode === 'RECORD' ? '0 0 10px rgba(239, 68, 68, 0.4)' : '0 0 8px rgba(16, 185, 129, 0.5)'
 
-            // 2. Scroll Logic (UPDATED)
+            // 2. Scroll Logic
             if (scrollContainerRef.current) {
                 const container = scrollContainerRef.current
                 const containerWidth = container.clientWidth
@@ -411,30 +455,16 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                     updateMeasureVisibility(measure)
                 }
 
-                // Spatial Reveal Logic for CURRENT MEASURE
-                // This replaces the complex linking logic with a simple spatial check
+                // Spatial Reveal Logic
                 const currentElements = measureContentMap.current.get(measure)
                 if (currentElements) {
-                    // Get cursor screen position relative to container
-                    // Actually, cursorX IS relative to container (and scrolled with it? No, osmd is static inside scroll?)
-                    // Wait, cursorX is absolute in the big SVG coordinates.
-                    // The elements in measureContentMap are also HTMLElements inside that container.
-                    // So we can compare element.left vs cursorX directly if we map to same coord space.
-
-                    // cursorX is "pixels from start of score".
-                    // element bounding rect is viewport relative.
-                    // We need element X relative to container start.
-
-                    // Fortunately, we used bounding box logic in calculating measure bounds.
-                    // Let's grab the container rect once.
                     const containerRect = containerRef.current.getBoundingClientRect()
-
                     currentElements.forEach(el => {
                         const rect = el.getBoundingClientRect()
                         const elLeft = rect.left - containerRect.left
 
-                        // Small lookahead (e.g. 10px) so items appear slightly before the cursor line hits them
-                        if (elLeft > cursorX + 10) {
+                        // Lookahead: Show items 15px before cursor hits them
+                        if (elLeft > cursorX + 15) {
                             el.style.opacity = '0'
                         } else {
                             el.style.opacity = '1'
@@ -445,7 +475,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
 
             lastMeasureIndexRef.current = currentMeasureIndex
 
-            // 4. Karaoke (Just Coloring)
+            // 4. Karaoke (Coloring & FX)
             const notesInMeasure = noteMap.current.get(measure)
 
             if (notesInMeasure && mode === 'PLAYBACK') {
@@ -456,33 +486,56 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                 const scaleRatio = fullMeasureWidth > 0 ? activeWidth / fullMeasureWidth : 1
                 const highlightProgress = offsetRatio + (effectiveProgress * scaleRatio)
 
+                // 1. Define Palettes
                 const defaultColor = darkMode ? '#e0e0e0' : '#000000'
-                const activeColor = highlightNote ? '#10B981' : defaultColor
+                const highlightColor = '#10B981' // Green
+                const shadowColor = '#10B981'    // Green Glow
 
                 notesInMeasure.forEach(noteData => {
                     if (!noteData.element) return
+
                     const lookahead = 0.04
                     const noteEndThreshold = noteData.timestamp + 0.01
+                    const isActive = (highlightProgress <= noteEndThreshold && highlightProgress >= noteData.timestamp - lookahead)
 
-                    // Color & Scale Logic
-                    if (highlightProgress <= noteEndThreshold && highlightProgress >= noteData.timestamp - lookahead) {
-                        applyColor(noteData.element, activeColor)
-                        if (noteData.stemElement) applyColor(noteData.stemElement, activeColor)
+                    // 2. Determine Target Styles
+                    let targetFill = defaultColor
+                    let targetFilter = 'none'
+                    let targetTransform = 'scale(1) translateY(0)'
 
-                        // === POP EFFECT LOGIC ===
-                        if (popEffect) {
-                            noteData.element.style.transform = 'scale(1.5)'
-                        }
+                    if (isActive) {
+                        // Color
+                        if (highlightNote) targetFill = highlightColor
 
-                    } else {
-                        applyColor(noteData.element, defaultColor)
-                        if (noteData.stemElement) applyColor(noteData.stemElement, defaultColor)
+                        // Glow (Filter)
+                        if (glowEffect) targetFilter = `drop-shadow(0 0 6px ${shadowColor})`
 
-                        // Reset Size (Force un-pop)
-                        if (popEffect) {
-                            noteData.element.style.transform = 'scale(1)'
-                        }
+                        // Pop & Jump (Transform)
+                        const scale = popEffect ? 1.4 : 1
+                        const jump = jumpEffect ? -10 : 0
+                        targetTransform = `scale(${scale}) translateY(${jump}px)`
                     }
+
+                    // 3. Apply Styles (Explicitly Set Everything)
+
+                    // A. Apply Color (Fill/Stroke)
+                    applyColor(noteData.element, targetFill)
+                    if (noteData.stemElement) applyColor(noteData.stemElement, targetFill)
+
+                    // B. Apply Filter (Glow) - Only to Parent Group to avoid Double Shadow
+                    // Note: VexFlow StaveNotes are Groups. Stems are often children. 
+                    // Applying filter to Group handles everything.
+                    noteData.element.style.filter = targetFilter
+
+                    // Safety: If stem is detached (not a child), apply filter to it too. 
+                    // If it IS a child, the parent filter already covers it.
+                    if (noteData.stemElement && !noteData.element.contains(noteData.stemElement)) {
+                        noteData.stemElement.style.filter = targetFilter
+                    }
+
+                    // C. Apply Transform (Pop/Jump) - To Child Paths Only
+                    const paths = noteData.element.querySelectorAll('path')
+                    paths.forEach(p => (p as unknown as HTMLElement).style.transform = targetTransform)
                 })
             }
 
@@ -492,7 +545,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                 notesInMeasure.forEach(noteData => {
                     if (noteData.element) {
                         applyColor(noteData.element, defaultColor)
-                        if (popEffect) noteData.element.style.transform = 'scale(1)' // Reset scale
+                        if (popEffect) noteData.element.style.filter = 'none'
                     }
                 })
             }
@@ -500,7 +553,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
         } catch (err) {
             console.error('Error positioning cursor:', err)
         }
-    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect, darkMode, highlightNote, cursorPosition])
+    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition])
 
     // ... (Animation Loop)
     useEffect(() => {

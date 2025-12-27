@@ -4,10 +4,14 @@ import { useState, useEffect, useRef } from 'react'
 interface ModularIslandProps {
     popEffect: boolean
     setPopEffect: (val: boolean) => void
+    jumpEffect: boolean             // <--- NEW PROP
+    setJumpEffect: (val: boolean) => void // <--- NEW PROP
     darkMode: boolean
     setDarkMode: (val: boolean) => void
     highlightNote: boolean      // <--- NEW PROP
     setHighlightNote: (val: boolean) => void // <--- NEW PROP
+    glowEffect: boolean             // <--- NEW PROP
+    setGlowEffect: (val: boolean) => void // <--- NEW PROP
     cursorPosition: number
     setCursorPosition: (val: number) => void // <--- NEW PROP
     onDock: () => void // <--- NEW PROP
@@ -15,8 +19,10 @@ interface ModularIslandProps {
 
 export function ModularIsland({
     popEffect, setPopEffect,
+    jumpEffect, setJumpEffect, // <--- Destructure
     darkMode, setDarkMode,
     highlightNote, setHighlightNote,
+    glowEffect, setGlowEffect, // <--- Destructure
     cursorPosition, setCursorPosition,
     onDock
 }: ModularIslandProps) {
@@ -135,16 +141,43 @@ export function ModularIsland({
                     >
                         Color
                     </button>
+                </div>
 
+                {/* Controls Row 2 (FX) */}
+                <div className="flex items-center justify-between gap-2">
+                    {/* GLOW Toggle */}
+                    <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => setGlowEffect(!glowEffect)}
+                        className={`
+                            flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1
+                            ${glowEffect ? 'bg-cyan-600 text-white' : 'bg-slate-700 text-slate-400'}
+                        `}
+                    >
+                        <span>✨ Glow</span>
+                    </button>
+
+                    {/* POP Toggle */}
                     <button
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={() => setPopEffect(!popEffect)}
                         className={`
-                            flex-1 py-1.5 rounded-lg text-sm font-medium transition-all
+                            flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1
                             ${popEffect ? 'bg-pink-600 text-white' : 'bg-slate-700 text-slate-400'}
                         `}
                     >
-                        Pop
+                        <span>💥 Pop</span>
+                    </button>
+
+                    <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => setJumpEffect(!jumpEffect)}
+                        className={`
+                            flex-1 py-1.5 rounded-lg text-xs font-bold transition-all
+                            ${jumpEffect ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-400'}
+                        `}
+                    >
+                        ⤴ Jump
                     </button>
                 </div>
 

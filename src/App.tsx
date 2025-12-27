@@ -22,6 +22,8 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('PAGE')
   const [revealMode, setRevealMode] = useState<'OFF' | 'NOTE' | 'CURTAIN'>('OFF')
   const [popEffect, setPopEffect] = useState(false)
+  const [jumpEffect, setJumpEffect] = useState(true) // <--- NEW STATE (Default True)
+  const [glowEffect, setGlowEffect] = useState(true) // <--- NEW STATE (Default True)
   const [darkMode, setDarkMode] = useState(false)
   const [highlightNote, setHighlightNote] = useState(true)
   const [cursorPosition, setCursorPosition] = useState(0.2)
@@ -376,10 +378,18 @@ function App() {
               Highlight
             </label>
 
-            <label className={`flex items-center gap-2 text-sm font-medium cursor-pointer transition-colors ${darkMode ? 'text-slate-300 hover:text-pink-400' : 'text-slate-700 hover:text-pink-600'}`}>
-              <input type="checkbox" checked={popEffect} onChange={e => setPopEffect(e.target.checked)} className="accent-pink-500" />
-              Pop Effect
-            </label>
+            {/* FX Group */}
+            <div className={`flex items-center gap-3 px-3 py-1 rounded border ${darkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-200'}`}>
+              <label className="flex items-center gap-1 text-xs font-bold cursor-pointer hover:text-cyan-500">
+                <input type="checkbox" checked={glowEffect} onChange={e => setGlowEffect(e.target.checked)} className="accent-cyan-500" /> Glow
+              </label>
+              <label className="flex items-center gap-1 text-xs font-bold cursor-pointer hover:text-pink-500">
+                <input type="checkbox" checked={popEffect} onChange={e => setPopEffect(e.target.checked)} className="accent-pink-500" /> Pop
+              </label>
+              <label className="flex items-center gap-1 text-xs font-bold cursor-pointer hover:text-orange-500">
+                <input type="checkbox" checked={jumpEffect} onChange={e => setJumpEffect(e.target.checked)} className="accent-orange-500" /> Jump
+              </label>
+            </div>
           </div>
 
           {/* Right: Cursor & Breakout */}
@@ -421,6 +431,8 @@ function App() {
             <ScoreViewerScroll
               audioRef={audioRef} anchors={anchors} mode={mode} musicXmlUrl={xmlUrl || DEFAULT_XML}
               revealMode={revealMode} popEffect={popEffect} darkMode={darkMode}
+              glowEffect={glowEffect} // <--- Pass Prop
+              jumpEffect={jumpEffect} // <--- Pass Prop
               highlightNote={highlightNote} cursorPosition={cursorPosition}
             />
           )}
@@ -429,6 +441,8 @@ function App() {
           {viewMode === 'SCROLL' && isIslandMode && (
             <ModularIsland
               popEffect={popEffect} setPopEffect={setPopEffect}
+              glowEffect={glowEffect} setGlowEffect={setGlowEffect} // <--- Pass Props
+              jumpEffect={jumpEffect} setJumpEffect={setJumpEffect} // <--- Pass Props
               darkMode={darkMode} setDarkMode={setDarkMode}
               highlightNote={highlightNote} setHighlightNote={setHighlightNote}
               cursorPosition={cursorPosition} setCursorPosition={setCursorPosition}
