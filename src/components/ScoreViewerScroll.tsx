@@ -14,6 +14,7 @@ interface ScoreViewerProps {
     musicXmlUrl?: string
     revealMode: 'OFF' | 'NOTE' | 'CURTAIN'
     popEffect: boolean
+    darkMode: boolean
 }
 
 type NoteData = {
@@ -24,7 +25,7 @@ type NoteData = {
     stemElement: HTMLElement | null
 }
 
-export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect }: ScoreViewerProps) {
+export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, darkMode }: ScoreViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
@@ -39,6 +40,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
 
     const noteMap = useRef<Map<number, NoteData[]>>(new Map())
     const measureContentMap = useRef<Map<number, HTMLElement[]>>(new Map())
+    const staffLinesRef = useRef<HTMLElement[]>([])
 
     // === 1. BUILD MAPS ===
     const calculateNoteMap = useCallback(() => {
@@ -48,6 +50,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
         console.log('[ScoreViewerScroll] Building Spatial Maps...')
         const newNoteMap = new Map<number, NoteData[]>()
         const newMeasureContentMap = new Map<number, HTMLElement[]>()
+        const newStaffLines: HTMLElement[] = []
 
         const measureList = osmd.GraphicSheet.MeasureList
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -145,8 +148,11 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                 const isWide = rect.width > 50
                 const isThin = rect.height < 3
 
-                // If it looks like a staff line, RETURN (Skip it -> It stays visible)
-                if (isWide && isThin) return
+                // If it looks like a staff line, SAVE IT then RETURN
+                if (isWide && isThin) {
+                    newStaffLines.push(element)
+                    return
+                }
             }
 
             const elCenterX = (rect.left - containerRect.left) + (rect.width / 2)
@@ -161,6 +167,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
 
         noteMap.current = newNoteMap
         measureContentMap.current = newMeasureContentMap
+        staffLinesRef.current = newStaffLines
     }, [])
 
     // ... (Init Effect)
@@ -257,6 +264,29 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
         prevRevealModeRef.current = revealMode
     }, [revealMode, updateMeasureVisibility, findCurrentMeasure, audioRef])
 
+    // === DARK MODE EFFECT ===
+    useEffect(() => {
+        const baseColor = darkMode ? '#ffffff' : '#000000'
+        const bgColor = darkMode ? '#1a1a1a' : '#ffffff'
+
+        // 1. Color All Content Elements
+        if (measureContentMap.current) {
+            measureContentMap.current.forEach(elements => {
+                elements.forEach(el => applyColor(el, baseColor))
+            })
+        }
+
+        // 2. Color Staff Lines
+        if (staffLinesRef.current) {
+            staffLinesRef.current.forEach(el => applyColor(el, baseColor))
+        }
+
+        // 3. Color Container Background
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.style.backgroundColor = bgColor
+        }
+    }, [darkMode, isLoaded])
+
 
     // === ANIMATION LOOP ===
     const updateCursorPosition = useCallback((audioTime: number) => {
@@ -342,6 +372,8 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
             if (curtainRef.current) {
                 if (revealMode === 'CURTAIN') {
                     curtainRef.current.style.display = 'block'
+                    curtainRef.current.style.backgroundColor = darkMode ? '#1a1a1a' : '#ffffff'
+
                     const curtainLookahead = 180
                     curtainRef.current.style.left = `${cursorX + curtainLookahead}px`
                     curtainRef.current.style.width = '50000px'
@@ -401,6 +433,8 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                 const scaleRatio = fullMeasureWidth > 0 ? activeWidth / fullMeasureWidth : 1
                 const highlightProgress = offsetRatio + (effectiveProgress * scaleRatio)
 
+                const defaultColor = darkMode ? '#ffffff' : '#000000'
+
                 notesInMeasure.forEach(noteData => {
                     if (!noteData.element) return
                     const lookahead = 0.04
@@ -416,7 +450,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                         }
 
                     } else {
-                        applyColor(noteData.element, '#000000')
+                        applyColor(noteData.element, defaultColor)
 
                         // Reset Size
                         if (popEffect) {
@@ -428,9 +462,10 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
 
             // Record Mode Reset
             if (mode === 'RECORD' && notesInMeasure) {
+                const defaultColor = darkMode ? '#ffffff' : '#000000'
                 notesInMeasure.forEach(noteData => {
                     if (noteData.element) {
-                        applyColor(noteData.element, '#000000')
+                        applyColor(noteData.element, defaultColor)
                         if (popEffect) noteData.element.style.transform = 'scale(1)' // Reset scale
                     }
                 })

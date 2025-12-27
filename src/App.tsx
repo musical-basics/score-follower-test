@@ -23,6 +23,7 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('PAGE')
   const [revealMode, setRevealMode] = useState<'OFF' | 'NOTE' | 'CURTAIN'>('OFF')
   const [popEffect, setPopEffect] = useState(false)
+  const [darkMode, setDarkMode] = useState(false)
   const [anchors, setAnchors] = useState<Anchor[]>(INITIAL_ANCHORS)
   const [mode, setMode] = useState<AppMode>('PLAYBACK')
   const [projects, setProjects] = useState<Project[]>([])
@@ -454,6 +455,7 @@ function App() {
               musicXmlUrl={xmlUrl}
               revealMode={revealMode}
               popEffect={popEffect}
+              darkMode={darkMode}
             />
           )}
         </main>
@@ -610,6 +612,8 @@ function App() {
           <ModularIsland
             popEffect={popEffect}
             setPopEffect={setPopEffect}
+            darkMode={darkMode}
+            setDarkMode={setDarkMode}
           />
         )}
       </div>
