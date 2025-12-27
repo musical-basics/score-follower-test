@@ -20,6 +20,7 @@ type NoteData = {
     measureIndex: number
     timestamp: number
     element: HTMLElement | null
+    stemElement: HTMLElement | null
 }
 
 export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode }: ScoreViewerProps) {
@@ -95,13 +96,12 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                                     let element = document.getElementById(vfId)
                                     if (!element) element = document.getElementById(`vf-${vfId}`)
                                     if (element) {
-                                        // Just track the head for coloring. 
-                                        // Visibility is handled by the spatial map below.
                                         measureNotes.push({
                                             id: vfId,
                                             measureIndex: measureNumber,
                                             timestamp: relativeTimestamp,
-                                            element: element as HTMLElement
+                                            element: element as HTMLElement,
+                                            stemElement: null
                                         })
                                     }
                                 }
@@ -114,22 +114,34 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
         })
 
         // C. UNIVERSAL CONTENT MAP (Visibility)
-        // Select ALL SVG elements that are likely music symbols
-        const selector = 'svg path, svg rect, svg text, .vf-stavenote, .vf-beam'
+        // Select ALL SVG elements to catch ledger lines, accidentals, text, etc.
+        const selector = 'svg path, svg rect, svg text'
         const allElements = Array.from(containerRef.current.querySelectorAll(selector))
+        const containerRect = containerRef.current.getBoundingClientRect()
 
         allElements.forEach(el => {
             const element = el as HTMLElement
             const rect = element.getBoundingClientRect()
-
-            // FILTER 1: Skip massive elements (likely staff lines or bounding boxes)
-            if (rect.width > 200 || rect.height > 200) return
-
-            // FILTER 2: Skip elements that are already completely transparent (helpers)
             const style = window.getComputedStyle(element)
+
             if (style.opacity === '0' || style.display === 'none') return
 
-            const containerRect = containerRef.current!.getBoundingClientRect()
+            // === SMART FILTER ===
+            // 1. Is it part of a musical symbol? (Beam, Note, Rest, Accidental, Stem)
+            // If it is, we MUST map it (so it gets hidden).
+            const isMusicSymbol = element.closest('.vf-stavenote, .vf-beam, .vf-rest, .vf-accidental, .vf-modifier, .vf-stem') !== null
+
+            if (!isMusicSymbol) {
+                // 2. If NOT a symbol, it might be a Staff Line or Barline.
+                // Staff Lines are WIDE (>50px) and VERY THIN (<3px).
+                // We tighter the height check to 3px to avoid grabbing thin beams.
+                const isWide = rect.width > 50
+                const isThin = rect.height < 3
+
+                // If it looks like a staff line, RETURN (Skip it -> It stays visible)
+                if (isWide && isThin) return
+            }
+
             const elCenterX = (rect.left - containerRect.left) + (rect.width / 2)
 
             // Bucket into measure
