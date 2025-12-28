@@ -486,17 +486,25 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
 
             // 3. Mode Specific Logic
 
-            // A. CURTAIN MODE
+            // A. CURTAIN MODE (Fixed Width)
             if (curtainRef.current) {
                 if (revealMode === 'CURTAIN') {
                     curtainRef.current.style.display = 'block'
                     curtainRef.current.style.backgroundColor = darkMode ? '#222222' : '#ffffff'
 
                     const curtainLookahead = 180
-                    curtainRef.current.style.left = `${cursorX + curtainLookahead}px`
-                    curtainRef.current.style.width = '50000px'
+                    const curtainStart = cursorX + curtainLookahead
+
+                    // FIX: Calculate exact remaining width instead of 50000px
+                    const lastMeasure = measureList[measureList.length - 1][0]
+                    const totalScoreWidth = (lastMeasure.PositionAndShape.AbsolutePosition.x + lastMeasure.PositionAndShape.BorderRight) * unitInPixels
+                    const requiredWidth = Math.max(0, totalScoreWidth - curtainStart + 500)
+
+                    curtainRef.current.style.left = `${curtainStart}px`
+                    curtainRef.current.style.width = `${requiredWidth}px`
                 } else {
                     curtainRef.current.style.display = 'none'
+                    curtainRef.current.style.width = '0px'
                 }
             }
 
