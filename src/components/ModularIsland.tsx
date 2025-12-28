@@ -15,6 +15,10 @@ interface ModularIslandProps {
     setCursorPosition: (val: number) => void
     isLocked: boolean
     setIsLocked: (val: boolean) => void
+    // Curtain Props
+    revealMode: 'OFF' | 'NOTE' | 'CURTAIN'
+    curtainLookahead: number
+    setCurtainLookahead: (val: number) => void
     onDock: () => void
 }
 
@@ -26,6 +30,7 @@ export function ModularIsland({
     highlightNote, setHighlightNote,
     cursorPosition, setCursorPosition,
     isLocked, setIsLocked,
+    revealMode, curtainLookahead, setCurtainLookahead,
     onDock
 }: ModularIslandProps) {
     const [position, setPosition] = useState({ x: window.innerWidth - 320, y: 100 })
@@ -184,9 +189,25 @@ export function ModularIsland({
                         type="range" min="0.2" max="0.8" step="0.01"
                         value={cursorPosition}
                         onChange={(e) => setCursorPosition(parseFloat(e.target.value))}
-                        className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                        className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-emerald-400"
                     />
                 </div>
+
+                {/* Curtain Gap Slider (Only visible in Curtain Mode) */}
+                {revealMode === 'CURTAIN' && (
+                    <div className="w-full pt-1 border-t border-slate-700 mt-1" onMouseDown={(e) => e.stopPropagation()}>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-1 font-mono">
+                            <span>Curtain Gap</span>
+                            <span>{Math.round(curtainLookahead * 100)}%</span>
+                        </div>
+                        <input
+                            type="range" min="0" max="1" step="0.01"
+                            value={curtainLookahead}
+                            onChange={(e) => setCurtainLookahead(parseFloat(e.target.value))}
+                            className="w-full h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-indigo-400"
+                        />
+                    </div>
+                )}
             </div>
         </div>
     )

@@ -20,6 +20,8 @@ interface ScoreControlsProps {
     setJumpEffect: (val: boolean) => void
     cursorPosition: number
     setCursorPosition: (val: number) => void
+    curtainLookahead: number
+    setCurtainLookahead: (val: number) => void
 }
 
 export function ScoreControls(props: ScoreControlsProps) {
@@ -32,7 +34,8 @@ export function ScoreControls(props: ScoreControlsProps) {
         glowEffect, setGlowEffect,
         popEffect, setPopEffect,
         jumpEffect, setJumpEffect,
-        cursorPosition, setCursorPosition
+        cursorPosition, setCursorPosition,
+        curtainLookahead, setCurtainLookahead
     } = props
 
     // In Page View, we hide these specific scroll controls? 
@@ -102,7 +105,7 @@ export function ScoreControls(props: ScoreControlsProps) {
                 </div>
             </div>
 
-            {/* Right: Cursor & Breakout */}
+            {/* Right: Cursor, Curtain & Breakout */}
             <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                     <span className={`text-xs font-mono ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Cursor</span>
@@ -114,6 +117,19 @@ export function ScoreControls(props: ScoreControlsProps) {
                         className="w-24 h-1.5 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-slate-600"
                     />
                 </div>
+
+                {/* Curtain Gap Slider (Only in Curtain Mode) */}
+                {revealMode === 'CURTAIN' && (
+                    <div className="flex items-center gap-2 border-l border-slate-300 pl-4">
+                        <span className={`text-xs font-mono ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Gap</span>
+                        <input
+                            type="range" min="0" max="1" step="0.01"
+                            value={curtainLookahead}
+                            onChange={e => setCurtainLookahead(parseFloat(e.target.value))}
+                            className="w-20 h-1.5 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                        />
+                    </div>
+                )}
 
                 <div className={`w-px h-4 ${darkMode ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
 

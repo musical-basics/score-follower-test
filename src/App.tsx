@@ -31,6 +31,7 @@ function App() {
   const [jumpEffect, setJumpEffect] = useState(true)
   const [glowEffect, setGlowEffect] = useState(true)
   const [isLocked, setIsLocked] = useState(true)
+  const [curtainLookahead, setCurtainLookahead] = useState(0.25) // 0-1, controls curtain gap
   const [darkMode, setDarkMode] = useState(false)
   const [highlightNote, setHighlightNote] = useState(true)
   const [cursorPosition, setCursorPosition] = useState(0.2)
@@ -44,8 +45,8 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null)
   const [currentProjectTitle, setCurrentProjectTitle] = useState<string | null>(null)
-  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
-  const [isLoadModalOpen, setIsLoadModalOpen] = useState(false)
+  const [_isSaveModalOpen, setIsSaveModalOpen] = useState(false)
+  const [_isLoadModalOpen, setIsLoadModalOpen] = useState(false)
 
   // File State
   const [audioFile, setAudioFile] = useState<File | null>(null)
@@ -369,6 +370,8 @@ function App() {
           setJumpEffect={setJumpEffect}
           cursorPosition={cursorPosition}
           setCursorPosition={setCursorPosition}
+          curtainLookahead={curtainLookahead}
+          setCurtainLookahead={setCurtainLookahead}
         />
       )}
 
@@ -416,6 +419,14 @@ function App() {
             <span className="text-[10px] text-slate-400 font-mono">Cursor: {Math.round(cursorPosition * 100)}%</span>
             <input type="range" min="0.2" max="0.8" step="0.01" value={cursorPosition} onChange={(e) => setCursorPosition(parseFloat(e.target.value))} className="w-24 h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-cyan-400" />
           </div>
+
+          {/* Curtain Gap Slider (Only in Curtain Mode) */}
+          {revealMode === 'CURTAIN' && (
+            <div className="flex items-center gap-2 border-l border-slate-600 pl-4">
+              <span className="text-[10px] text-slate-400 font-mono">Gap: {Math.round(curtainLookahead * 100)}%</span>
+              <input type="range" min="0" max="1" step="0.01" value={curtainLookahead} onChange={(e) => setCurtainLookahead(parseFloat(e.target.value))} className="w-20 h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-indigo-400" />
+            </div>
+          )}
         </div>
       )}
 
@@ -437,6 +448,7 @@ function App() {
                 revealMode={revealMode} popEffect={popEffect} darkMode={darkMode}
                 glowEffect={glowEffect} jumpEffect={jumpEffect}
                 highlightNote={highlightNote} cursorPosition={cursorPosition} isLocked={isLocked}
+                curtainLookahead={curtainLookahead}
               />
             ) : (
               <ScrollView
@@ -446,6 +458,7 @@ function App() {
                 jumpEffect={jumpEffect}
                 highlightNote={highlightNote} cursorPosition={cursorPosition}
                 isLocked={isLocked}
+                curtainLookahead={curtainLookahead}
               />
             )
           )}
@@ -491,6 +504,8 @@ function App() {
                 setJumpEffect={setJumpEffect}
                 cursorPosition={cursorPosition}
                 setCursorPosition={setCursorPosition}
+                curtainLookahead={curtainLookahead}
+                setCurtainLookahead={setCurtainLookahead}
               />
             )
           )}

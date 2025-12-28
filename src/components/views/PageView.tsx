@@ -25,7 +25,7 @@ type NoteData = {
     element: Element | null
 }
 
-export function PageView({ audioRef, anchors, mode, musicXmlUrl, darkMode }: PageViewProps) {
+export function PageView({ audioRef, anchors, mode, musicXmlUrl, darkMode: _darkMode }: PageViewProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const scrollContainerRef = useRef<HTMLDivElement>(null) // 1. NEW: Add a Ref for the outer scrollable wrapper

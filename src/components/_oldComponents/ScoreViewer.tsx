@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { OpenSheetMusicDisplay as OSMD } from 'opensheetmusicdisplay'
-import type { AppMode } from '../App'
+import type { AppMode } from '../../App'
 
 interface Anchor {
     measure: number

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { OpenSheetMusicDisplay as OSMD } from 'opensheetmusicdisplay'
-import type { AppMode } from '../App'
+import type { AppMode } from '../../App'
 
 interface Anchor {
     measure: number
@@ -16,10 +16,11 @@ interface ScoreViewerProps {
     popEffect: boolean
     darkMode: boolean
     highlightNote: boolean
-    glowEffect: boolean         // <--- NEW PROP
-    jumpEffect: boolean         // <--- NEW PROP
+    glowEffect: boolean
+    jumpEffect: boolean
     cursorPosition: number
     isLocked: boolean
+    curtainLookahead?: number // Optional for legacy, defaults to 0.3
 }
 
 type NoteData = {
@@ -30,7 +31,7 @@ type NoteData = {
     stemElement: HTMLElement | null
 }
 
-export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked }: ScoreViewerProps) {
+export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead = 0.3 }: ScoreViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
@@ -492,13 +493,14 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
                     curtainRef.current.style.display = 'block'
                     curtainRef.current.style.backgroundColor = darkMode ? '#222222' : '#ffffff'
 
-                    const curtainLookahead = 180
-                    const curtainStart = cursorX + curtainLookahead
+                    // Use slider value: 0% -> 0px, 100% -> 600px
+                    const maxPixelOffset = 600
+                    const offset = curtainLookahead * maxPixelOffset
+                    const curtainStart = cursorX + offset
 
-                    // FIX: Calculate exact remaining width instead of 50000px
                     const lastMeasure = measureList[measureList.length - 1][0]
                     const totalScoreWidth = (lastMeasure.PositionAndShape.AbsolutePosition.x + lastMeasure.PositionAndShape.BorderRight) * unitInPixels
-                    const requiredWidth = Math.max(0, totalScoreWidth - curtainStart + 500)
+                    const requiredWidth = Math.max(0, totalScoreWidth - curtainStart + 800)
 
                     curtainRef.current.style.left = `${curtainStart}px`
                     curtainRef.current.style.width = `${requiredWidth}px`
@@ -516,7 +518,7 @@ export function ScoreViewerScroll({ audioRef, anchors, mode, musicXmlUrl, reveal
 
                 // Spatial Reveal Logic
                 const currentElements = measureContentMap.current.get(measure)
-                if (currentElements) {
+                if (currentElements && containerRef.current) {
                     const containerRect = containerRef.current.getBoundingClientRect()
                     currentElements.forEach(el => {
                         const rect = el.getBoundingClientRect()

@@ -21,6 +21,7 @@ interface ScrollViewProps {
     jumpEffect: boolean
     cursorPosition: number
     isLocked: boolean
+    curtainLookahead: number // 0-1 slider value for curtain gap
 }
 
 type NoteData = {
@@ -31,7 +32,7 @@ type NoteData = {
     stemElement: HTMLElement | null
 }
 
-export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked }: ScrollViewProps) {
+export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead }: ScrollViewProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
@@ -507,22 +508,21 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                     curtainRef.current.style.display = 'block'
                     curtainRef.current.style.backgroundColor = darkMode ? '#222222' : '#ffffff'
 
-                    const curtainLookahead = 180
-                    const curtainStart = cursorX + curtainLookahead
+                    // MAPPING: 0% -> 0px offset (Curtain touches cursor), 100% -> 600px offset
+                    const maxPixelOffset = 600
+                    const offset = curtainLookahead * maxPixelOffset
+                    const curtainStart = cursorX + offset
 
-                    // FIX: Calculate exact remaining width instead of 50000px
-                    // Find the last measure to know the true end of the score
+                    // Calculate Width (End of Score - Curtain Start)
                     const lastMeasure = measureList[measureList.length - 1][0]
                     const totalScoreWidth = (lastMeasure.PositionAndShape.AbsolutePosition.x + lastMeasure.PositionAndShape.BorderRight) * unitInPixels
-
-                    // Width is simple math: End - Start + padding
-                    const requiredWidth = Math.max(0, totalScoreWidth - curtainStart + 500) // +500px buffer
+                    const requiredWidth = Math.max(0, totalScoreWidth - curtainStart + 800)
 
                     curtainRef.current.style.left = `${curtainStart}px`
                     curtainRef.current.style.width = `${requiredWidth}px`
                 } else {
                     curtainRef.current.style.display = 'none'
-                    curtainRef.current.style.width = '0px' // Reset width to prevent scroll ghosting
+                    curtainRef.current.style.width = '0px'
                 }
             }
 
@@ -630,7 +630,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
         } catch (err) {
             console.error('Error positioning cursor:', err)
         }
-    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked])
+    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead])
 
     // ... (Animation Loop)
     useEffect(() => {
