@@ -295,6 +295,21 @@ function App() {
         </div>
         <div className="flex items-center gap-4">
 
+          {/* Import XML Button */}
+          <button
+            onClick={() => document.getElementById('hidden-xml-input')?.click()}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-bold transition-all flex items-center gap-2"
+          >
+            📂 Import XML
+          </button>
+          <input
+            id="hidden-xml-input"
+            type="file"
+            accept=".xml,.musicxml,.mxl"
+            onChange={handleXmlSelect}
+            className="hidden"
+          />
+
           {/* Load/Save Group */}
           <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
             <button
