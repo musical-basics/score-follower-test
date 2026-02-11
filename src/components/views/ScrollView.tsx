@@ -707,7 +707,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
 
     return (
         <div ref={scrollContainerRef} className="relative w-full h-full overflow-auto overscroll-none bg-white">
-            <div ref={containerRef} onClick={handleScoreClick} className="relative w-full min-h-[400px] cursor-pointer">
+            <div ref={containerRef} onClick={handleScoreClick} className="relative min-w-full w-fit min-h-[400px] cursor-pointer">
                 {/* 1. OSMD Render Container (Cleared by hook on init/cleanup) */}
                 <div ref={osmdContainerRef} />
 
@@ -783,7 +783,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                             }}
                         >
                             {/* The Label */}
-                            <div className="bg-red-600 text-white text-[10px] font-bold px-1.5 rounded-sm shadow-md mb-0.5 whitespace-nowrap">
+                            <div className="bg-red-600/90 text-white text-[9px] font-bold px-1 rounded-sm shadow-sm mb-0.5 whitespace-nowrap select-none">
                                 M{anchor.measure}
                             </div>
 
