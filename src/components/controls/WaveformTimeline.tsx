@@ -79,16 +79,18 @@ export function WaveformTimeline({ audioUrl, anchors, onUpdateAnchor, audioRef, 
                 playbackCursorRef.current.style.left = `${x}px`
 
                 // Autoscroll Logic
-                const container = containerRef.current
-                const containerWidth = container.clientWidth
-                const scrollLeft = container.scrollLeft
+                if (!audioRef.current.paused) {
+                    const container = containerRef.current
+                    const containerWidth = container.clientWidth
+                    const scrollLeft = container.scrollLeft
 
-                // Keep cursor somewhat centered if it moves near the edge
-                // Basic edge detection to scroll along
-                if (x > scrollLeft + containerWidth * 0.8) {
-                    container.scrollLeft = x - containerWidth * 0.2
-                } else if (x < scrollLeft) {
-                    container.scrollLeft = x - 50
+                    // Keep cursor somewhat centered if it moves near the edge
+                    // Basic edge detection to scroll along
+                    if (x > scrollLeft + containerWidth * 0.8) {
+                        container.scrollLeft = x - containerWidth * 0.2
+                    } else if (x < scrollLeft) {
+                        container.scrollLeft = x - 50
+                    }
                 }
             }
             animationFrameRef.current = requestAnimationFrame(animate)
