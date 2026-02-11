@@ -22,6 +22,8 @@ interface ScoreControlsProps {
     setCursorPosition: (val: number) => void
     curtainLookahead: number
     setCurtainLookahead: (val: number) => void
+    showCursor?: boolean
+    setShowCursor?: (val: boolean) => void
 }
 
 export function ScoreControls(props: ScoreControlsProps) {
@@ -35,7 +37,8 @@ export function ScoreControls(props: ScoreControlsProps) {
         popEffect, setPopEffect,
         jumpEffect, setJumpEffect,
         cursorPosition, setCursorPosition,
-        curtainLookahead, setCurtainLookahead
+        curtainLookahead, setCurtainLookahead,
+        showCursor, setShowCursor
     } = props
 
     // In Page View, we hide these specific scroll controls? 
@@ -107,8 +110,15 @@ export function ScoreControls(props: ScoreControlsProps) {
 
             {/* Right: Cursor, Curtain & Breakout */}
             <div className="flex items-center gap-4">
+                {setShowCursor && (
+                    <label className={`flex items-center gap-2 text-sm font-medium cursor-pointer transition-colors ${darkMode ? 'text-slate-300 hover:text-emerald-400' : 'text-slate-700 hover:text-emerald-600'}`}>
+                        <input type="checkbox" checked={showCursor ?? true} onChange={e => setShowCursor(e.target.checked)} className="accent-emerald-500" />
+                        Cursor
+                    </label>
+                )}
+
                 <div className="flex items-center gap-2">
-                    <span className={`text-xs font-mono ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Cursor</span>
+                    <span className={`text-xs font-mono ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Pos</span>
                     <input
                         type="range" min="0.2" max="0.8" step="0.01"
                         value={cursorPosition}

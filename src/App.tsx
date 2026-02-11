@@ -35,6 +35,7 @@ function App() {
   const [darkMode, setDarkMode] = useState(false)
   const [highlightNote, setHighlightNote] = useState(true)
   const [cursorPosition, setCursorPosition] = useState(0.2)
+  const [showCursor, setShowCursor] = useState(true)
   const [isIslandMode, setIsIslandMode] = useState(false)
 
   // Legacy Mode State
@@ -387,6 +388,8 @@ function App() {
           setCursorPosition={setCursorPosition}
           curtainLookahead={curtainLookahead}
           setCurtainLookahead={setCurtainLookahead}
+          showCursor={showCursor}                         // NEW
+          setShowCursor={setShowCursor}                   // NEW
         />
       )}
 
@@ -474,6 +477,7 @@ function App() {
                 highlightNote={highlightNote} cursorPosition={cursorPosition}
                 isLocked={isLocked}
                 curtainLookahead={curtainLookahead}
+                showCursor={showCursor}                         // NEW
               />
             )
           )}
@@ -521,6 +525,8 @@ function App() {
                 setCursorPosition={setCursorPosition}
                 curtainLookahead={curtainLookahead}
                 setCurtainLookahead={setCurtainLookahead}
+                showCursor={showCursor}               // NEW
+                setShowCursor={setShowCursor}         // NEW
               />
             )
           )}

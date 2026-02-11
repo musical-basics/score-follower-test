@@ -22,6 +22,7 @@ interface ScrollViewProps {
     cursorPosition: number
     isLocked: boolean
     curtainLookahead: number // 0-1 slider value for curtain gap
+    showCursor?: boolean
 }
 
 type NoteData = {
@@ -32,7 +33,7 @@ type NoteData = {
     stemElement: HTMLElement | null
 }
 
-export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead }: ScrollViewProps) {
+export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead, showCursor = true }: ScrollViewProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
@@ -466,7 +467,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
             cursorRef.current.style.left = `${cursorX}px`
             cursorRef.current.style.top = `${systemTop}px`
             cursorRef.current.style.height = `${systemHeight}px`
-            cursorRef.current.style.display = 'block'
+            cursorRef.current.style.display = showCursor ? 'block' : 'none'
             cursorRef.current.style.backgroundColor = mode === 'RECORD' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(16, 185, 129, 0.8)'
             cursorRef.current.style.boxShadow = mode === 'RECORD' ? '0 0 10px rgba(239, 68, 68, 0.4)' : '0 0 8px rgba(16, 185, 129, 0.5)'
 
