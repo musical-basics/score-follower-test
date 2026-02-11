@@ -37,6 +37,7 @@ type NoteData = {
 
 export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead, showCursor = true, duration = 0, onUpdateAnchor }: ScrollViewProps) {
     const containerRef = useRef<HTMLDivElement>(null)
+    const osmdContainerRef = useRef<HTMLDivElement>(null) // NEW: Specific container for OSMD to handle clearing
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
     const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -46,7 +47,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
 
     // const osmdRef = useRef<OSMD | null>(null) // Replaced by hook
     // const [isLoaded, setIsLoaded] = useState(false) // Replaced by hook
-    const { osmdRef, isLoaded } = useOSMD(containerRef as React.RefObject<HTMLDivElement>, musicXmlUrl, {
+    const { osmdRef, isLoaded } = useOSMD(osmdContainerRef as React.RefObject<HTMLDivElement>, musicXmlUrl, {
         autoResize: true, followCursor: false, drawTitle: true, drawSubtitle: false,
         drawComposer: false, drawCredits: false, drawPartNames: true, drawMeasureNumbers: true,
         renderSingleHorizontalStaffline: true
@@ -706,87 +707,92 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
 
     return (
         <div ref={scrollContainerRef} className="relative w-full h-full overflow-auto overscroll-none bg-white">
-            <div ref={containerRef} onClick={handleScoreClick} className="w-full min-h-[400px] cursor-pointer" />
+            <div ref={containerRef} onClick={handleScoreClick} className="relative w-full min-h-[400px] cursor-pointer">
+                {/* 1. OSMD Render Container (Cleared by hook on init/cleanup) */}
+                <div ref={osmdContainerRef} />
 
-            {/* The Cursor */}
-            <div ref={cursorRef} id="cursor-overlay" className="absolute pointer-events-none"
-                style={{
-                    left: 0, top: 0, width: '3px', height: '100px',
-                    backgroundColor: mode === 'RECORD' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(16, 185, 129, 0.8)',
-                    boxShadow: mode === 'RECORD' ? '0 0 10px rgba(239, 68, 68, 0.4)' : '0 0 8px rgba(16, 185, 129, 0.5)',
-                    zIndex: 1000, display: 'none',
-                    // FIX: Disable transition during playback to stop cursor shake.
-                    // CSS transitions conflict with JS-driven scroll locking.
-                    transition: 'none',
-                }}
-            />
+                {/* 2. Overlays (Now inside relative container, safe from OSMD clearing) */}
 
-            {/* The Curtain (Simple Overlay for CURTAIN mode) */}
-            <div ref={curtainRef} id="reveal-curtain" className="absolute pointer-events-none bg-white"
-                style={{
-                    display: 'none',
-                    zIndex: 999, // Below cursor, above score
-                    top: 0,
-                    bottom: 0,
-                }}
-            />
+                {/* The Cursor */}
+                <div ref={cursorRef} id="cursor-overlay" className="absolute pointer-events-none"
+                    style={{
+                        left: 0, top: 0, width: '3px', height: '100px',
+                        backgroundColor: mode === 'RECORD' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(16, 185, 129, 0.8)',
+                        boxShadow: mode === 'RECORD' ? '0 0 10px rgba(239, 68, 68, 0.4)' : '0 0 8px rgba(16, 185, 129, 0.5)',
+                        zIndex: 1000, display: 'none',
+                        // FIX: Disable transition during playback to stop cursor shake.
+                        // CSS transitions conflict with JS-driven scroll locking.
+                        transition: 'none',
+                    }}
+                />
 
-            {/* --- ANCHOR MARKERS OVERLAY (Only in RECORD mode) --- */}
-            {mode === 'RECORD' && duration > 0 && anchors.map(anchor => {
-                // Determine total width (fallback to 1 to avoid division by zero)
-                const totalWidth = scrollContainerRef.current?.scrollWidth || 0
-                if (totalWidth === 0) return null
+                {/* The Curtain (Simple Overlay for CURTAIN mode) */}
+                <div ref={curtainRef} id="reveal-curtain" className="absolute pointer-events-none bg-white"
+                    style={{
+                        display: 'none',
+                        zIndex: 999, // Below cursor, above score
+                        top: 0,
+                        bottom: 0,
+                    }}
+                />
 
-                // Linear Mapping: (AnchorTime / AudioDuration) * 100%
-                const leftPercent = (anchor.time / duration) * 100
+                {/* --- ANCHOR MARKERS OVERLAY (Only in RECORD mode) --- */}
+                {mode === 'RECORD' && duration > 0 && anchors.map(anchor => {
+                    // Determine total width from container (now correct context)
+                    const totalWidth = containerRef.current?.scrollWidth || 0
+                    if (totalWidth === 0) return null
 
-                return (
-                    <div
-                        key={anchor.measure}
-                        className="absolute top-0 flex flex-col items-center group z-[1001] cursor-ew-resize pointer-events-auto hover:scale-110 transition-transform origin-top"
-                        style={{ left: `${leftPercent}%`, transform: 'translateX(-50%)' }}
-                        onMouseDown={(e: React.MouseEvent) => {
-                            e.stopPropagation() // Prevent navigating score on click
-                            const startX = e.clientX
-                            const container = scrollContainerRef.current
-                            if (!container) return
-                            const startWidth = container.scrollWidth
+                    // Linear Mapping: (AnchorTime / AudioDuration) * 100%
+                    const leftPercent = (anchor.time / duration) * 100
 
-                            const handleMouseMove = (moveEvent: MouseEvent) => {
-                                // const diffX = moveEvent.clientX - startX
-                                // Visual feedback could be added here
-                            }
+                    return (
+                        <div
+                            key={anchor.measure}
+                            className="absolute top-0 flex flex-col items-center group z-[1001] cursor-ew-resize pointer-events-auto hover:scale-110 transition-transform origin-top"
+                            // leftPercent is correct because container is relative
+                            style={{ left: `${leftPercent}%`, transform: 'translateX(-50%)' }}
+                            onMouseDown={(e: React.MouseEvent) => {
+                                e.stopPropagation() // Prevent navigating score on click
+                                const startX = e.clientX
+                                const container = containerRef.current
+                                if (!container) return
+                                const startWidth = container.scrollWidth
 
-                            const handleMouseUp = (upEvent: MouseEvent) => {
-                                const finalDiffX = upEvent.clientX - startX
-                                const currentPixel = (leftPercent / 100) * startWidth
-                                const newPixel = Math.max(0, Math.min(startWidth, currentPixel + finalDiffX))
-
-                                // Convert pixel back to time: (Pixel / TotalWidth) * Duration
-                                const newTime = (newPixel / startWidth) * duration
-
-                                if (onUpdateAnchor) {
-                                    onUpdateAnchor(anchor.measure, newTime)
+                                const handleMouseMove = (moveEvent: MouseEvent) => {
+                                    // Visual feedback placeholder
                                 }
 
-                                window.removeEventListener('mousemove', handleMouseMove)
-                                window.removeEventListener('mouseup', handleMouseUp)
-                            }
+                                const handleMouseUp = (upEvent: MouseEvent) => {
+                                    const finalDiffX = upEvent.clientX - startX
+                                    const currentPixel = (leftPercent / 100) * startWidth
+                                    const newPixel = Math.max(0, Math.min(startWidth, currentPixel + finalDiffX))
 
-                            window.addEventListener('mousemove', handleMouseMove)
-                            window.addEventListener('mouseup', handleMouseUp)
-                        }}
-                    >
-                        {/* The Label */}
-                        <div className="bg-red-600 text-white text-[10px] font-bold px-1.5 rounded-sm shadow-md mb-0.5 whitespace-nowrap">
-                            M{anchor.measure}
+                                    // Convert pixel back to time: (Pixel / TotalWidth) * Duration
+                                    const newTime = (newPixel / startWidth) * duration
+
+                                    if (onUpdateAnchor) {
+                                        onUpdateAnchor(anchor.measure, newTime)
+                                    }
+
+                                    window.removeEventListener('mousemove', handleMouseMove)
+                                    window.removeEventListener('mouseup', handleMouseUp)
+                                }
+
+                                window.addEventListener('mousemove', handleMouseMove)
+                                window.addEventListener('mouseup', handleMouseUp)
+                            }}
+                        >
+                            {/* The Label */}
+                            <div className="bg-red-600 text-white text-[10px] font-bold px-1.5 rounded-sm shadow-md mb-0.5 whitespace-nowrap">
+                                M{anchor.measure}
+                            </div>
+
+                            {/* The Arrow/Line - Updated height to h-full */}
+                            <div className="w-0.5 h-full bg-red-600/50 shadow-[0_0_2px_rgba(0,0,0,0.3)]"></div>
                         </div>
-
-                        {/* The Arrow/Line */}
-                        <div className="w-0.5 h-screen bg-red-600/50 shadow-[0_0_2px_rgba(0,0,0,0.3)]"></div>
-                    </div>
-                )
-            })}
+                    )
+                })}
+            </div>
         </div>
     )
 }
