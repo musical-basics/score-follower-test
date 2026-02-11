@@ -1,23 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import './App.css'
-import { PageView } from './components/views/PageView'
+
 import { ScrollView } from './components/views/ScrollView'
 import { ScoreControls } from './components/controls/ScoreControls'
 import { AnchorSidebar } from './components/controls/AnchorSidebar'
 import { projectService, type Project } from './services/projectService'
-
-// Legacy Imports
-import { ScoreViewer as OldPageView } from './components/_oldComponents/ScoreViewer'
-import { ScoreViewerScroll as OldScrollView } from './components/_oldComponents/ScoreViewerScroll'
-import { ModularIsland as OldModularIsland } from './components/_oldComponents/ModularIsland'
-
 export interface Anchor {
   measure: number
   time: number
 }
 
 export type AppMode = 'PLAYBACK' | 'RECORD'
-type ViewMode = 'PAGE' | 'SCROLL'
 
 // Measure 1 always starts at 0:00
 const INITIAL_ANCHORS: Anchor[] = [{ measure: 1, time: 0 }]
@@ -25,7 +18,6 @@ export const DEFAULT_AUDIO = '/c-major-scale.mp3'
 const DEFAULT_XML = '/c-major-exercise.musicxml'
 
 function App() {
-  const [viewMode, setViewMode] = useState<ViewMode>('PAGE')
   const [revealMode, setRevealMode] = useState<'OFF' | 'NOTE' | 'CURTAIN'>('OFF')
   const [popEffect, setPopEffect] = useState(false)
   const [jumpEffect, setJumpEffect] = useState(true)
@@ -38,8 +30,6 @@ function App() {
   const [showCursor, setShowCursor] = useState(true)
   const [isIslandMode, setIsIslandMode] = useState(false)
 
-  // Legacy Mode State
-  const [legacyMode, setLegacyMode] = useState(false)
 
   const [anchors, setAnchors] = useState<Anchor[]>(INITIAL_ANCHORS)
   const [mode, setMode] = useState<AppMode>('PLAYBACK')
@@ -351,185 +341,87 @@ function App() {
             ))}
           </select>
 
-          <div className="w-px h-6 bg-slate-700 mx-2"></div>
-
-          <button onClick={() => setViewMode(v => v === 'PAGE' ? 'SCROLL' : 'PAGE')}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-medium border border-slate-700">
-            {viewMode === 'PAGE' ? '∞ Scroll View' : '📄 Page View'}
-          </button>
-          <div className="w-px h-6 bg-slate-700 mx-2"></div>
-          <button onClick={() => setLegacyMode(!legacyMode)} className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded border ${legacyMode ? 'bg-amber-500 text-black border-amber-600' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
-            {legacyMode ? 'Warning: LEGACY MODE' : 'New Architecture'}
-          </button>
         </div>
       </div>
 
       {/* 2. CONTROLS (Toolbar or Island) */}
-      {!legacyMode && (
-        <ScoreControls
-          viewMode={viewMode}
-          isIslandMode={isIslandMode}
-          setIsIslandMode={setIsIslandMode}
-          revealMode={revealMode}
-          setRevealMode={setRevealMode}
-          darkMode={darkMode}
-          setDarkMode={setDarkMode}
-          isLocked={isLocked}
-          setIsLocked={setIsLocked}
-          highlightNote={highlightNote}
-          setHighlightNote={setHighlightNote}
-          glowEffect={glowEffect}
-          setGlowEffect={setGlowEffect}
-          popEffect={popEffect}
-          setPopEffect={setPopEffect}
-          jumpEffect={jumpEffect}
-          setJumpEffect={setJumpEffect}
-          cursorPosition={cursorPosition}
-          setCursorPosition={setCursorPosition}
-          curtainLookahead={curtainLookahead}
-          setCurtainLookahead={setCurtainLookahead}
-          showCursor={showCursor}                         // NEW
-          setShowCursor={setShowCursor}                   // NEW
-        />
-      )}
-
-      {/* LEGACY SUBMENU (for Legacy Mode in SCROLL view) */}
-      {legacyMode && viewMode === 'SCROLL' && (
-        <div className="bg-slate-800 border-b border-slate-700 px-4 py-2 flex items-center gap-3 flex-wrap">
-          {/* Mode Toggle */}
-          <button onClick={() => setIsIslandMode(!isIslandMode)} className={`px-3 py-1.5 rounded text-xs font-medium border ${isIslandMode ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-slate-700 text-slate-300 border-slate-600'}`}>
-            {isIslandMode ? '🏝️ Island Mode' : '📌 Docked'}
-          </button>
-          <div className="w-px h-6 bg-slate-600"></div>
-
-          {/* Dark Mode */}
-          <button onClick={() => setDarkMode(!darkMode)} className={`px-3 py-1.5 rounded text-xs font-medium ${darkMode ? 'bg-slate-600 text-yellow-300' : 'bg-slate-700 text-slate-300'}`}>
-            {darkMode ? '🌙 Dark' : '☀️ Light'}
-          </button>
-
-          {/* Highlight */}
-          <button onClick={() => setHighlightNote(!highlightNote)} className={`px-3 py-1.5 rounded text-xs font-medium ${highlightNote ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
-            Color
-          </button>
-
-          {/* Glow */}
-          <button onClick={() => setGlowEffect(!glowEffect)} className={`px-3 py-1.5 rounded text-xs font-medium ${glowEffect ? 'bg-cyan-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
-            ✨ Glow
-          </button>
-
-          {/* Pop */}
-          <button onClick={() => setPopEffect(!popEffect)} className={`px-3 py-1.5 rounded text-xs font-medium ${popEffect ? 'bg-pink-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
-            💥 Pop
-          </button>
-
-          {/* Jump */}
-          <button onClick={() => setJumpEffect(!jumpEffect)} className={`px-3 py-1.5 rounded text-xs font-medium ${jumpEffect ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
-            ⤴ Jump
-          </button>
-
-          {/* Lock */}
-          <button onClick={() => setIsLocked(!isLocked)} className={`px-3 py-1.5 rounded text-xs font-bold ${isLocked ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-slate-700 text-slate-400'}`}>
-            {isLocked ? '🔒 Locked' : '🔓 Free'}
-          </button>
-
-          {/* Cursor Slider */}
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="text-[10px] text-slate-400 font-mono">Cursor: {Math.round(cursorPosition * 100)}%</span>
-            <input type="range" min="0.2" max="0.8" step="0.01" value={cursorPosition} onChange={(e) => setCursorPosition(parseFloat(e.target.value))} className="w-24 h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-cyan-400" />
-          </div>
-
-          {/* Curtain Gap Slider (Only in Curtain Mode) */}
-          {revealMode === 'CURTAIN' && (
-            <div className="flex items-center gap-2 border-l border-slate-600 pl-4">
-              <span className="text-[10px] text-slate-400 font-mono">Gap: {Math.round(curtainLookahead * 100)}%</span>
-              <input type="range" min="0" max="1" step="0.01" value={curtainLookahead} onChange={(e) => setCurtainLookahead(parseFloat(e.target.value))} className="w-20 h-1.5 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-indigo-400" />
-            </div>
-          )}
-        </div>
-      )}
+      <ScoreControls
+        isIslandMode={isIslandMode}
+        setIsIslandMode={setIsIslandMode}
+        revealMode={revealMode}
+        setRevealMode={setRevealMode}
+        darkMode={darkMode}
+        setDarkMode={setDarkMode}
+        isLocked={isLocked}
+        setIsLocked={setIsLocked}
+        highlightNote={highlightNote}
+        setHighlightNote={setHighlightNote}
+        glowEffect={glowEffect}
+        setGlowEffect={setGlowEffect}
+        popEffect={popEffect}
+        setPopEffect={setPopEffect}
+        jumpEffect={jumpEffect}
+        setJumpEffect={setJumpEffect}
+        cursorPosition={cursorPosition}
+        setCursorPosition={setCursorPosition}
+        curtainLookahead={curtainLookahead}
+        setCurtainLookahead={setCurtainLookahead}
+        showCursor={showCursor}
+        setShowCursor={setShowCursor}
+      />
 
       {/* 3. MAIN CONTENT */}
       <div className="flex-1 flex overflow-hidden">
 
         {/* Score Area */}
+        {/* Score Area */}
         <div className="flex-1 relative overflow-hidden flex flex-col">
-          {viewMode === 'PAGE' ? (
-            legacyMode ? (
-              <OldPageView audioRef={audioRef} anchors={anchors} mode={mode} musicXmlUrl={xmlUrl || DEFAULT_XML} />
-            ) : (
-              <PageView audioRef={audioRef} anchors={anchors} mode={mode} musicXmlUrl={xmlUrl || DEFAULT_XML} />
-            )
-          ) : (
-            legacyMode ? (
-              <OldScrollView
-                audioRef={audioRef} anchors={anchors} mode={mode} musicXmlUrl={xmlUrl || DEFAULT_XML}
-                revealMode={revealMode} popEffect={popEffect} darkMode={darkMode}
-                glowEffect={glowEffect} jumpEffect={jumpEffect}
-                highlightNote={highlightNote} cursorPosition={cursorPosition} isLocked={isLocked}
-                curtainLookahead={curtainLookahead}
-              />
-            ) : (
-              <ScrollView
-                audioRef={audioRef} anchors={anchors} mode={mode} musicXmlUrl={xmlUrl || DEFAULT_XML}
-                revealMode={revealMode} popEffect={popEffect} darkMode={darkMode}
-                glowEffect={glowEffect}
-                jumpEffect={jumpEffect}
-                highlightNote={highlightNote} cursorPosition={cursorPosition}
-                isLocked={isLocked}
-                curtainLookahead={curtainLookahead}
-                showCursor={showCursor}                         // NEW
-              />
-            )
+          <ScrollView
+            audioRef={audioRef}
+            anchors={anchors}
+            mode={mode}
+            musicXmlUrl={xmlUrl || DEFAULT_XML}
+            revealMode={revealMode}
+            popEffect={popEffect}
+            darkMode={darkMode}
+            glowEffect={glowEffect}
+            jumpEffect={jumpEffect}
+            highlightNote={highlightNote}
+            cursorPosition={cursorPosition}
+            isLocked={isLocked}
+            curtainLookahead={curtainLookahead}
+            showCursor={showCursor}                         // NEW
+          />
+
+          {/* MODULAR ISLAND (Float) */}
+          {isIslandMode && (
+            <ScoreControls
+              isIslandMode={isIslandMode}
+              setIsIslandMode={setIsIslandMode}
+              revealMode={revealMode}
+              setRevealMode={setRevealMode}
+              darkMode={darkMode}
+              setDarkMode={setDarkMode}
+              isLocked={isLocked}
+              setIsLocked={setIsLocked}
+              highlightNote={highlightNote}
+              setHighlightNote={setHighlightNote}
+              glowEffect={glowEffect}
+              setGlowEffect={setGlowEffect}
+              popEffect={popEffect}
+              setPopEffect={setPopEffect}
+              jumpEffect={jumpEffect}
+              setJumpEffect={setJumpEffect}
+              cursorPosition={cursorPosition}
+              setCursorPosition={setCursorPosition}
+              curtainLookahead={curtainLookahead}
+              setCurtainLookahead={setCurtainLookahead}
+              showCursor={showCursor}
+              setShowCursor={setShowCursor}
+            />
           )}
 
-          {/* MODULAR ISLAND (Only visible if isIslandMode is TRUE) */}
-          {/* Support Legacy Island too if needed, but the main goal is comparing core scrolling behavior. 
-              The user asked 'hook this up to the app view'. 
-              If legacyMode is ON, we might want the old island if in SCROLL mode.
-              However, the 'OldModularIsland' was built to work with 'OldScrollView' via props? 
-              Actually, the OldModularIsland took setPopEffect etc. 
-              If we want FULL parity, we should render OldModularIsland if legacyMode is on.
-          */}
-          {viewMode === 'SCROLL' && isIslandMode && (
-            legacyMode ? (
-              <OldModularIsland
-                popEffect={popEffect} setPopEffect={setPopEffect}
-                glowEffect={glowEffect} setGlowEffect={setGlowEffect}
-                jumpEffect={jumpEffect} setJumpEffect={setJumpEffect}
-                darkMode={darkMode} setDarkMode={setDarkMode}
-                highlightNote={highlightNote} setHighlightNote={setHighlightNote}
-                cursorPosition={cursorPosition} setCursorPosition={setCursorPosition}
-                isLocked={isLocked} setIsLocked={setIsLocked}
-                onDock={() => setIsIslandMode(false)}
-              />
-            ) : (
-              <ScoreControls
-                viewMode={viewMode}
-                isIslandMode={isIslandMode}
-                setIsIslandMode={setIsIslandMode}
-                revealMode={revealMode}
-                setRevealMode={setRevealMode}
-                darkMode={darkMode}
-                setDarkMode={setDarkMode}
-                isLocked={isLocked}
-                setIsLocked={setIsLocked}
-                highlightNote={highlightNote}
-                setHighlightNote={setHighlightNote}
-                glowEffect={glowEffect}
-                setGlowEffect={setGlowEffect}
-                popEffect={popEffect}
-                setPopEffect={setPopEffect}
-                jumpEffect={jumpEffect}
-                setJumpEffect={setJumpEffect}
-                cursorPosition={cursorPosition}
-                setCursorPosition={setCursorPosition}
-                curtainLookahead={curtainLookahead}
-                setCurtainLookahead={setCurtainLookahead}
-                showCursor={showCursor}               // NEW
-                setShowCursor={setShowCursor}         // NEW
-              />
-            )
-          )}
+
         </div>
 
         {/* Sidebar (Sync Anchors) */}

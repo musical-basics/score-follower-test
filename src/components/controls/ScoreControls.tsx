@@ -1,7 +1,7 @@
 import { ModularIsland } from '../ModularIsland'
 
 interface ScoreControlsProps {
-    viewMode: 'PAGE' | 'SCROLL'
+
     isIslandMode: boolean
     setIsIslandMode: (val: boolean) => void
     revealMode: 'OFF' | 'NOTE' | 'CURTAIN'
@@ -28,7 +28,7 @@ interface ScoreControlsProps {
 
 export function ScoreControls(props: ScoreControlsProps) {
     const {
-        viewMode, isIslandMode, setIsIslandMode,
+        isIslandMode, setIsIslandMode,
         revealMode, setRevealMode,
         darkMode, setDarkMode,
         isLocked, setIsLocked,
@@ -41,10 +41,7 @@ export function ScoreControls(props: ScoreControlsProps) {
         showCursor, setShowCursor
     } = props
 
-    // In Page View, we hide these specific scroll controls? 
-    // The user prompt said: "If we are in Page View, we might hide these or show a simplified version. if (viewMode === 'PAGE') return null"
-    // I will stick to that instruction.
-    if (viewMode === 'PAGE') return null
+
 
     if (isIslandMode) {
         return <ModularIsland {...props} onDock={() => setIsIslandMode(false)} />
