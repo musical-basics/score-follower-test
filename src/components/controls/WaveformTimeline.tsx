@@ -4,13 +4,17 @@ interface WaveformTimelineProps {
     audioUrl: string
     anchors: { measure: number, time: number }[]
     onUpdateAnchor: (measure: number, time: number) => void
+    audioRef: React.RefObject<HTMLAudioElement | null>
+    onSeek: (time: number) => void
 }
 
-export function WaveformTimeline({ audioUrl, anchors, onUpdateAnchor }: WaveformTimelineProps) {
+export function WaveformTimeline({ audioUrl, anchors, onUpdateAnchor, audioRef, onSeek }: WaveformTimelineProps) {
     const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null)
     const [zoom, setZoom] = useState(100) // 100px per second
     const containerRef = useRef<HTMLDivElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
+    const playbackCursorRef = useRef<HTMLDivElement>(null)
+    const animationFrameRef = useRef<number | null>(null)
 
     // 1. Load Audio
     useEffect(() => {
@@ -64,6 +68,51 @@ export function WaveformTimeline({ audioUrl, anchors, onUpdateAnchor }: Waveform
         }
     }, [audioBuffer, zoom])
 
+    // 3. Animation Loop (Cursor & Autoscroll)
+    useEffect(() => {
+        const animate = () => {
+            if (audioRef.current && playbackCursorRef.current && containerRef.current) {
+                const time = audioRef.current.currentTime
+                const x = time * zoom
+
+                // Update Cursor Position
+                playbackCursorRef.current.style.left = `${x}px`
+
+                // Autoscroll Logic
+                const container = containerRef.current
+                const containerWidth = container.clientWidth
+                const scrollLeft = container.scrollLeft
+
+                // Keep cursor somewhat centered if it moves near the edge
+                // Basic edge detection to scroll along
+                if (x > scrollLeft + containerWidth * 0.8) {
+                    container.scrollLeft = x - containerWidth * 0.2
+                } else if (x < scrollLeft) {
+                    container.scrollLeft = x - 50
+                }
+            }
+            animationFrameRef.current = requestAnimationFrame(animate)
+        }
+
+        animationFrameRef.current = requestAnimationFrame(animate)
+
+        return () => {
+            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+        }
+    }, [zoom, audioRef])
+
+    const handleContainerClick = (e: React.MouseEvent) => {
+        const container = containerRef.current
+        if (!container) return
+
+        const rect = container.getBoundingClientRect()
+        const scrollLeft = container.scrollLeft
+        const clickX = (e.clientX - rect.left) + scrollLeft
+
+        const newTime = clickX / zoom
+        onSeek(newTime)
+    }
+
     // Generate Grid Lines
     const gridLines = []
     if (audioBuffer) {
@@ -91,10 +140,21 @@ export function WaveformTimeline({ audioUrl, anchors, onUpdateAnchor }: Waveform
                 </div>
             </div>
 
-            <div ref={containerRef} className="flex-1 overflow-x-auto relative">
+            <div
+                ref={containerRef}
+                className="flex-1 overflow-x-auto relative cursor-text"
+                onClick={handleContainerClick}
+            >
                 <canvas ref={canvasRef} className="block" style={{ height: '120px' }} />
 
                 {gridLines}
+
+                {/* Playback Cursor */}
+                <div
+                    ref={playbackCursorRef}
+                    className="absolute top-0 bottom-0 w-0.5 bg-yellow-400 z-10 pointer-events-none shadow-[0_0_10px_rgba(250,204,21,0.5)]"
+                    style={{ left: 0 }}
+                />
 
                 {/* Anchors Overlay */}
                 {anchors.map(anchor => (

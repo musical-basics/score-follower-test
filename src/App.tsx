@@ -453,6 +453,10 @@ function App() {
           audioUrl={audioUrl}
           anchors={anchors}
           onUpdateAnchor={upsertAnchor}
+          audioRef={audioRef}
+          onSeek={(time) => {
+            if (audioRef.current) audioRef.current.currentTime = time
+          }}
         />
       )}
 
