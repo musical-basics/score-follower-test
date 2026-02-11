@@ -4,6 +4,7 @@ import './App.css'
 import { ScrollView } from './components/views/ScrollView'
 import { ScoreControls } from './components/controls/ScoreControls'
 import { AnchorSidebar } from './components/controls/AnchorSidebar'
+import { WaveformTimeline } from './components/controls/WaveformTimeline' // NEW
 import { projectService, type Project } from './services/projectService'
 export interface Anchor {
   measure: number
@@ -445,6 +446,15 @@ function App() {
         />
 
       </div>
+
+      {/* WAVEFORM TIMELINE (New) */}
+      {mode === 'RECORD' && audioUrl && (
+        <WaveformTimeline
+          audioUrl={audioUrl}
+          anchors={anchors}
+          onUpdateAnchor={upsertAnchor}
+        />
+      )}
 
       {/* Global Footer (Audio Player) */}
       <footer className="bg-slate-900 border-t border-slate-800 p-3 z-50">

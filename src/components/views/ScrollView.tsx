@@ -41,7 +41,8 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
     const scrollContainerRef = useRef<HTMLDivElement>(null)
-    const [scoreBounds, setScoreBounds] = useState({ start: 0, end: 0 }) // NEW: Track exact score content bounds
+    const [scoreBounds, setScoreBounds] = useState({ start: 0, end: 0 })
+    const [measureXMap, setMeasureXMap] = useState<Map<number, number>>(new Map()) // NEW: precise barline positions
 
     const lastMeasureIndexRef = useRef<number>(-1)
     const prevRevealModeRef = useRef<'OFF' | 'NOTE' | 'CURTAIN'>('OFF')
@@ -105,6 +106,27 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
         if (maxScoreX === Number.MIN_VALUE) maxScoreX = 0
 
         setScoreBounds({ start: minScoreX, end: maxScoreX })
+
+        // Build Measure X Map
+        const newMeasureXMap = new Map<number, number>()
+
+        measureList.forEach((staves, index) => {
+            const measureNumber = index + 1
+            // Use the first staff (usually Piano right hand) for X positioning
+            if (staves.length > 0) {
+                const staffMeasure = staves[0]
+                const pos = staffMeasure.PositionAndShape
+
+                // Calculate absolute X position in pixels
+                // AbsolutePosition.x is the system offset
+                // BorderLeft is the start of the measure relative to that
+                const absoluteX = (pos.AbsolutePosition.x + pos.BorderLeft) * unitInPixels
+
+                newMeasureXMap.set(measureNumber, absoluteX)
+            }
+        })
+
+        setMeasureXMap(newMeasureXMap)
 
         // A. Calculate Measure Boundaries
         // We assume measures are sorted by index, and generally by X position for a scrolling view.
@@ -768,41 +790,45 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                     }}
                 />
 
-                {/* --- ANCHOR MARKERS OVERLAY (Only in RECORD mode) --- */}
+                {/* --- ANCHOR MARKERS OVERLAY --- */}
                 {mode === 'RECORD' && duration > 0 && anchors.map(anchor => {
-                    const scoreWidth = scoreBounds.end - scoreBounds.start
-                    if (scoreWidth <= 0) return null
-
-                    // Map Time -> Pixels relative to music start
-                    // Use scoreBounds to align strictly with music content, ignoring margins
-                    const relativePos = (anchor.time / duration) * scoreWidth
-                    const leftPixel = scoreBounds.start + relativePos
+                    // 1. Get exact visual position from our map
+                    const leftPixel = measureXMap.get(anchor.measure) ?? 0
+                    
+                    // Safety check: don't render if we don't have a position yet
+                    if (!measureXMap.has(anchor.measure)) return null
 
                     return (
                         <div
                             key={anchor.measure}
                             className="absolute top-0 flex flex-col items-center group z-[1001] cursor-ew-resize pointer-events-auto hover:scale-110 transition-transform origin-top"
-                            // leftPixel is absolute px from container start
+                            // Position exactly at the measure's visual start
                             style={{ left: `${leftPixel}px`, transform: 'translateX(-50%)' }}
                             onMouseDown={(e: React.MouseEvent) => {
-                                e.stopPropagation() // Prevent navigating score on click
+                                e.stopPropagation()
                                 const startX = e.clientX
-                                const initialLeft = leftPixel // Capture current calculated position
+                                const initialTime = anchor.time
+                                
+                                // Calculate sensitivity: How many seconds per pixel?
+                                // We use the total average (Duration / TotalWidth) to keep dragging consistent
+                                const container = containerRef.current
+                                const totalWidth = container?.scrollWidth || 1000
+                                const secondsPerPixel = duration / totalWidth
 
                                 const handleMouseMove = (moveEvent: MouseEvent) => {
-                                    // Visual feedback placeholder
+                                    // Optional: Visual drag feedback could go here
                                 }
 
                                 const handleMouseUp = (upEvent: MouseEvent) => {
                                     const diffX = upEvent.clientX - startX
-
-                                    // Calculate new pixel position (clamped to score bounds)
-                                    const newLeft = Math.max(scoreBounds.start, Math.min(scoreBounds.end, initialLeft + diffX))
-
-                                    // Convert Pixels -> Time
-                                    // Time = ((Pixel - Start) / Width) * Duration
-                                    const ratio = (newLeft - scoreBounds.start) / scoreWidth
-                                    const newTime = ratio * duration
+                                    
+                                    // Convert drag distance to time difference
+                                    // Drag Right (+X) = Increase Time (Later)
+                                    // Drag Left (-X) = Decrease Time (Earlier)
+                                    const timeDelta = diffX * secondsPerPixel
+                                    
+                                    // Calculate new time, ensuring it doesn't go below 0
+                                    const newTime = Math.max(0, initialTime + timeDelta)
 
                                     if (onUpdateAnchor) {
                                         onUpdateAnchor(anchor.measure, newTime)
@@ -820,8 +846,8 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                             <div className="bg-red-600/90 text-white text-[9px] font-bold px-1 rounded-sm shadow-sm mb-0.5 whitespace-nowrap select-none">
                                 M{anchor.measure}
                             </div>
-
-                            {/* The Arrow/Line - Updated height to h-full */}
+                            
+                            {/* The Arrow/Line */}
                             <div className="w-0.5 h-full bg-red-600/50 shadow-[0_0_2px_rgba(0,0,0,0.3)]"></div>
                         </div>
                     )
