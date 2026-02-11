@@ -48,6 +48,7 @@ function App() {
   const [xmlUrl, setXmlUrl] = useState<string | undefined>(undefined)
 
   const [currentMeasure, setCurrentMeasure] = useState<number>(1)
+  const [duration, setDuration] = useState(0) // NEW: Track audio duration for timeline markers
 
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -390,7 +391,9 @@ function App() {
             cursorPosition={cursorPosition}
             isLocked={isLocked}
             curtainLookahead={curtainLookahead}
-            showCursor={showCursor}                         // NEW
+            showCursor={showCursor}
+            duration={duration}                             // NEW
+            onUpdateAnchor={upsertAnchor}                   // NEW
           />
 
           {/* MODULAR ISLAND (Float) */}
@@ -456,6 +459,7 @@ function App() {
               if (m !== currentMeasure) setCurrentMeasure(m)
             }
           }}
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} // NEW: Capture duration
         />
       </footer>
     </div>

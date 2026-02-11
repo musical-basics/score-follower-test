@@ -23,6 +23,8 @@ interface ScrollViewProps {
     isLocked: boolean
     curtainLookahead: number // 0-1 slider value for curtain gap
     showCursor?: boolean
+    duration?: number
+    onUpdateAnchor?: (measure: number, time: number) => void
 }
 
 type NoteData = {
@@ -33,7 +35,7 @@ type NoteData = {
     stemElement: HTMLElement | null
 }
 
-export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead, showCursor = true }: ScrollViewProps) {
+export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead, showCursor = true, duration = 0, onUpdateAnchor }: ScrollViewProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
@@ -728,6 +730,63 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                     bottom: 0,
                 }}
             />
+
+            {/* --- ANCHOR MARKERS OVERLAY (Only in RECORD mode) --- */}
+            {mode === 'RECORD' && duration > 0 && anchors.map(anchor => {
+                // Determine total width (fallback to 1 to avoid division by zero)
+                const totalWidth = scrollContainerRef.current?.scrollWidth || 0
+                if (totalWidth === 0) return null
+
+                // Linear Mapping: (AnchorTime / AudioDuration) * 100%
+                const leftPercent = (anchor.time / duration) * 100
+
+                return (
+                    <div
+                        key={anchor.measure}
+                        className="absolute top-0 flex flex-col items-center group z-[1001] cursor-ew-resize pointer-events-auto hover:scale-110 transition-transform origin-top"
+                        style={{ left: `${leftPercent}%`, transform: 'translateX(-50%)' }}
+                        onMouseDown={(e: React.MouseEvent) => {
+                            e.stopPropagation() // Prevent navigating score on click
+                            const startX = e.clientX
+                            const container = scrollContainerRef.current
+                            if (!container) return
+                            const startWidth = container.scrollWidth
+
+                            const handleMouseMove = (moveEvent: MouseEvent) => {
+                                // const diffX = moveEvent.clientX - startX
+                                // Visual feedback could be added here
+                            }
+
+                            const handleMouseUp = (upEvent: MouseEvent) => {
+                                const finalDiffX = upEvent.clientX - startX
+                                const currentPixel = (leftPercent / 100) * startWidth
+                                const newPixel = Math.max(0, Math.min(startWidth, currentPixel + finalDiffX))
+
+                                // Convert pixel back to time: (Pixel / TotalWidth) * Duration
+                                const newTime = (newPixel / startWidth) * duration
+
+                                if (onUpdateAnchor) {
+                                    onUpdateAnchor(anchor.measure, newTime)
+                                }
+
+                                window.removeEventListener('mousemove', handleMouseMove)
+                                window.removeEventListener('mouseup', handleMouseUp)
+                            }
+
+                            window.addEventListener('mousemove', handleMouseMove)
+                            window.addEventListener('mouseup', handleMouseUp)
+                        }}
+                    >
+                        {/* The Label */}
+                        <div className="bg-red-600 text-white text-[10px] font-bold px-1.5 rounded-sm shadow-md mb-0.5 whitespace-nowrap">
+                            M{anchor.measure}
+                        </div>
+
+                        {/* The Arrow/Line */}
+                        <div className="w-0.5 h-screen bg-red-600/50 shadow-[0_0_2px_rgba(0,0,0,0.3)]"></div>
+                    </div>
+                )
+            })}
         </div>
     )
 }
