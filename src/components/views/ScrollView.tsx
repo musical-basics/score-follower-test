@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 // import { OpenSheetMusicDisplay as OSMD } from 'opensheetmusicdisplay' // Removed, handled by hook
 import type { AppMode } from '../../App'
 import { useOSMD } from '../../hooks/useOSMD'
@@ -41,6 +41,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
     const scrollContainerRef = useRef<HTMLDivElement>(null)
+    const [scoreBounds, setScoreBounds] = useState({ start: 0, end: 0 }) // NEW: Track exact score content bounds
 
     const lastMeasureIndexRef = useRef<number>(-1)
     const prevRevealModeRef = useRef<'OFF' | 'NOTE' | 'CURTAIN'>('OFF')
@@ -72,7 +73,38 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
 
         const measureList = osmd.GraphicSheet.MeasureList
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const unitInPixels = (osmd.GraphicSheet as any).UnitInPixels || 10
+
+        // Calculate Score Bounds (Start of M1 to End of Last Measure)
+        let minScoreX = Number.MAX_VALUE
+        let maxScoreX = Number.MIN_VALUE
+
+        // Check M1 (Start)
+        if (measureList.length > 0) {
+            const m1 = measureList[0]
+            m1.forEach(staff => {
+                const pos = staff.PositionAndShape
+                const left = (pos.AbsolutePosition.x + pos.BorderLeft) * unitInPixels
+                if (left < minScoreX) minScoreX = left
+            })
+        }
+
+        // Check Last Measure (End)
+        if (measureList.length > 0) {
+            const mLast = measureList[measureList.length - 1]
+            mLast.forEach(staff => {
+                const pos = staff.PositionAndShape
+                const right = (pos.AbsolutePosition.x + pos.BorderRight) * unitInPixels
+                if (right > maxScoreX) maxScoreX = right
+            })
+        }
+
+        // Default if empty
+        if (minScoreX === Number.MAX_VALUE) minScoreX = 0
+        if (maxScoreX === Number.MIN_VALUE) maxScoreX = 0
+
+        setScoreBounds({ start: minScoreX, end: maxScoreX })
 
         // A. Calculate Measure Boundaries
         // We assume measures are sorted by index, and generally by X position for a scrolling view.
@@ -738,37 +770,39 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
 
                 {/* --- ANCHOR MARKERS OVERLAY (Only in RECORD mode) --- */}
                 {mode === 'RECORD' && duration > 0 && anchors.map(anchor => {
-                    // Determine total width from container (now correct context)
-                    const totalWidth = containerRef.current?.scrollWidth || 0
-                    if (totalWidth === 0) return null
+                    const scoreWidth = scoreBounds.end - scoreBounds.start
+                    if (scoreWidth <= 0) return null
 
-                    // Linear Mapping: (AnchorTime / AudioDuration) * 100%
-                    const leftPercent = (anchor.time / duration) * 100
+                    // Map Time -> Pixels relative to music start
+                    // Use scoreBounds to align strictly with music content, ignoring margins
+                    const relativePos = (anchor.time / duration) * scoreWidth
+                    const leftPixel = scoreBounds.start + relativePos
 
                     return (
                         <div
                             key={anchor.measure}
                             className="absolute top-0 flex flex-col items-center group z-[1001] cursor-ew-resize pointer-events-auto hover:scale-110 transition-transform origin-top"
-                            // leftPercent is correct because container is relative
-                            style={{ left: `${leftPercent}%`, transform: 'translateX(-50%)' }}
+                            // leftPixel is absolute px from container start
+                            style={{ left: `${leftPixel}px`, transform: 'translateX(-50%)' }}
                             onMouseDown={(e: React.MouseEvent) => {
                                 e.stopPropagation() // Prevent navigating score on click
                                 const startX = e.clientX
-                                const container = containerRef.current
-                                if (!container) return
-                                const startWidth = container.scrollWidth
+                                const initialLeft = leftPixel // Capture current calculated position
 
                                 const handleMouseMove = (moveEvent: MouseEvent) => {
                                     // Visual feedback placeholder
                                 }
 
                                 const handleMouseUp = (upEvent: MouseEvent) => {
-                                    const finalDiffX = upEvent.clientX - startX
-                                    const currentPixel = (leftPercent / 100) * startWidth
-                                    const newPixel = Math.max(0, Math.min(startWidth, currentPixel + finalDiffX))
+                                    const diffX = upEvent.clientX - startX
 
-                                    // Convert pixel back to time: (Pixel / TotalWidth) * Duration
-                                    const newTime = (newPixel / startWidth) * duration
+                                    // Calculate new pixel position (clamped to score bounds)
+                                    const newLeft = Math.max(scoreBounds.start, Math.min(scoreBounds.end, initialLeft + diffX))
+
+                                    // Convert Pixels -> Time
+                                    // Time = ((Pixel - Start) / Width) * Duration
+                                    const ratio = (newLeft - scoreBounds.start) / scoreWidth
+                                    const newTime = ratio * duration
 
                                     if (onUpdateAnchor) {
                                         onUpdateAnchor(anchor.measure, newTime)
