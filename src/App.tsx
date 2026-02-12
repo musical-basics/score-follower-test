@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import './App.css'
 
-import { ScrollView } from './components/views/ScrollView'
+import { ScrollView, type BeatAnchor } from './components/views/ScrollView'
 import { ScoreControls } from './components/controls/ScoreControls'
 import { AnchorSidebar } from './components/controls/AnchorSidebar'
 import { WaveformTimeline } from './components/controls/WaveformTimeline' // NEW
@@ -49,7 +49,12 @@ function App() {
   const [xmlUrl, setXmlUrl] = useState<string | undefined>(undefined)
 
   const [currentMeasure, setCurrentMeasure] = useState<number>(1)
-  const [duration, setDuration] = useState(0) // NEW: Track audio duration for timeline markers
+  const [duration, setDuration] = useState(0)
+
+  // Level 2: Beat Mapping
+  const [beatAnchors, setBeatAnchors] = useState<BeatAnchor[]>([])
+  const [isLevel2Mode, setIsLevel2Mode] = useState(false)
+  const [subdivision, setSubdivision] = useState(4) // DEFAULT SUBDIVISION
 
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -168,6 +173,7 @@ function App() {
     setAudioUrl(project.audio_url)
     setXmlUrl(project.xml_url)
     setAnchors(project.anchors)
+    // TODO: persist beatAnchors in project too eventually
     setCurrentProjectId(project.id)
     setCurrentProjectTitle(project.title)
     setMode('RECORD')
@@ -213,6 +219,55 @@ function App() {
     }
   }, [mode])
 
+  // --- BEAT MAPPING HELPERS ---
+  // REVISED: Generate Beat Anchors using Subdivision
+  const generateBeatAnchors = useCallback(() => {
+    if (anchors.length < 2) return
+    const newBeats: BeatAnchor[] = []
+    const sortedAnchors = [...anchors].sort((a, b) => a.measure - b.measure)
+
+    for (let i = 0; i < sortedAnchors.length; i++) {
+      const currentA = sortedAnchors[i]
+      const nextA = (i + 1 < sortedAnchors.length) ? sortedAnchors[i + 1] : null
+
+      // Priority: Use Subdivision Input first, fallback to detected beat count (if mapped), else 4
+      const beatsToGenerate = subdivision
+
+      if (nextA) {
+        const duration = nextA.time - currentA.time
+        const timePerBeat = duration / beatsToGenerate
+
+        for (let b = 2; b <= beatsToGenerate; b++) {
+          newBeats.push({
+            measure: currentA.measure,
+            beat: b,
+            time: currentA.time + (timePerBeat * (b - 1))
+          })
+        }
+      }
+    }
+    setBeatAnchors(newBeats)
+  }, [anchors, subdivision])
+
+  const toggleLevel2 = useCallback(() => {
+    setIsLevel2Mode(prev => {
+      const nextState = !prev
+      // REMOVED AUTO-GENERATION to allow user to set subdivision first
+      return nextState
+    })
+  }, [])
+
+  const upsertBeatAnchor = (measure: number, beat: number, time: number) => {
+    setBeatAnchors(prev => {
+      const filtered = prev.filter(b => !(b.measure === measure && b.beat === beat))
+      const newBeats = [...filtered, { measure, beat, time }]
+      return newBeats.sort((a, b) => {
+        if (a.measure !== b.measure) return a.measure - b.measure
+        return a.beat - b.beat
+      })
+    })
+  }
+
   const handleJumpToMeasure = (time: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time
@@ -247,7 +302,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    // Note: scrollIntoView was handled by refs in the old sidebar code. 
+    // Note: scrollIntoView was handled by refs in the old sidebar code.
     // In new architecture, we might pass a prop or handle it inside AnchorSidebar.
     // For now, removing the direct ref manipulation here as the elements are in child component.
   }, [currentMeasure])
@@ -394,7 +449,10 @@ function App() {
             curtainLookahead={curtainLookahead}
             showCursor={showCursor}
             duration={duration}                             // NEW
-            onUpdateAnchor={upsertAnchor}                   // NEW
+            onUpdateAnchor={upsertAnchor}
+            beatAnchors={isLevel2Mode ? beatAnchors : []}   // NEW: Pass explicit empty array if off to disable interpolation
+            onUpdateBeatAnchor={upsertBeatAnchor}           // NEW
+          // onBeatMapLoaded={setMeasureBeatCounts} // Unused
           />
 
           {/* MODULAR ISLAND (Float) */}
@@ -431,6 +489,13 @@ function App() {
         {/* Sidebar (Sync Anchors) */}
         <AnchorSidebar
           anchors={anchors}
+          beatAnchors={isLevel2Mode ? beatAnchors : []}
+          isLevel2Mode={isLevel2Mode}
+          toggleLevel2={toggleLevel2}
+          regenerateBeats={generateBeatAnchors}
+          upsertBeatAnchor={upsertBeatAnchor}
+          subdivision={subdivision} // NEW
+          setSubdivision={setSubdivision} // NEW
           darkMode={darkMode}
           upsertAnchor={upsertAnchor}
           handleDelete={handleDelete}
@@ -452,7 +517,9 @@ function App() {
         <WaveformTimeline
           audioUrl={audioUrl}
           anchors={anchors}
+          beatAnchors={isLevel2Mode ? beatAnchors : []} // FIX: Pass beat anchors
           onUpdateAnchor={upsertAnchor}
+          onUpdateBeatAnchor={upsertBeatAnchor}         // FIX: Pass update handler
           audioRef={audioRef}
           onSeek={(time) => {
             if (audioRef.current) audioRef.current.currentTime = time

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useCallback, useState, memo } from 'react'
 // import { OpenSheetMusicDisplay as OSMD } from 'opensheetmusicdisplay' // Removed, handled by hook
 import type { AppMode } from '../../App'
 import { useOSMD } from '../../hooks/useOSMD'
@@ -8,9 +8,17 @@ interface Anchor {
     time: number
 }
 
+// New Interface for Beat Anchors
+export interface BeatAnchor {
+    measure: number
+    beat: number
+    time: number
+}
+
 interface ScrollViewProps {
     audioRef: React.RefObject<HTMLAudioElement | null>
     anchors: Anchor[]
+    beatAnchors?: BeatAnchor[] // NEW: Level 2 Anchors
     mode: AppMode
     musicXmlUrl?: string
     revealMode: 'OFF' | 'NOTE' | 'CURTAIN'
@@ -21,10 +29,12 @@ interface ScrollViewProps {
     jumpEffect: boolean
     cursorPosition: number
     isLocked: boolean
-    curtainLookahead: number // 0-1 slider value for curtain gap
+    curtainLookahead: number
     showCursor?: boolean
     duration?: number
     onUpdateAnchor?: (measure: number, time: number) => void
+    onUpdateBeatAnchor?: (measure: number, beat: number, time: number) => void // NEW
+    onBeatMapLoaded?: (map: Map<number, number>) => void // NEW: Report beat counts
 }
 
 type NoteData = {
@@ -35,14 +45,23 @@ type NoteData = {
     stemElement: HTMLElement | null
 }
 
-export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead, showCursor = true, duration = 0, onUpdateAnchor }: ScrollViewProps) {
+function ScrollViewComponent({
+    audioRef, anchors, beatAnchors = [], mode, musicXmlUrl,
+    revealMode, popEffect, jumpEffect, glowEffect, darkMode, highlightNote,
+    cursorPosition, isLocked, curtainLookahead, showCursor = true,
+    duration = 0, onUpdateAnchor, onUpdateBeatAnchor, onBeatMapLoaded
+}: ScrollViewProps) {
     const containerRef = useRef<HTMLDivElement>(null)
-    const osmdContainerRef = useRef<HTMLDivElement>(null) // NEW: Specific container for OSMD to handle clearing
+    const osmdContainerRef = useRef<HTMLDivElement>(null)
     const cursorRef = useRef<HTMLDivElement>(null)
     const curtainRef = useRef<HTMLDivElement>(null)
     const scrollContainerRef = useRef<HTMLDivElement>(null)
     const [scoreBounds, setScoreBounds] = useState({ start: 0, end: 0 })
-    const [measureXMap, setMeasureXMap] = useState<Map<number, number>>(new Map()) // NEW: precise barline positions
+    const [measureXMap, setMeasureXMap] = useState<Map<number, number>>(new Map())
+
+    // NEW: Map to store the visual X position of every beat in every measure
+    // Map<MeasureIndex, Map<BeatIndex (1-based), pixelX>>
+    const beatXMapRef = useRef<Map<number, Map<number, number>>>(new Map())
 
     const lastMeasureIndexRef = useRef<number>(-1)
     const prevRevealModeRef = useRef<'OFF' | 'NOTE' | 'CURTAIN'>('OFF')
@@ -66,33 +85,29 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
         const osmd = osmdRef.current
         if (!osmd || !osmd.GraphicSheet || !containerRef.current) return
 
-        console.time('[ScoreViewerScroll] Spatial Map Build') // Performance Tracking
+        console.time('[ScoreViewerScroll] Spatial Map Build')
         const newNoteMap = new Map<number, NoteData[]>()
         const newMeasureContentMap = new Map<number, HTMLElement[]>()
-        const newAllSymbols: HTMLElement[] = [] // <--- For Dark Mode Coloring (Everything)
-        const newStaffLines: HTMLElement[] = [] // <--- For Staff Line Coloring
+        const newAllSymbols: HTMLElement[] = []
+        const newStaffLines: HTMLElement[] = []
+
+        // NEW: Beat calculations
+        const newBeatXMap = new Map<number, Map<number, number>>()
+        const newMeasureBeatCountMap = new Map<number, number>()
 
         const measureList = osmd.GraphicSheet.MeasureList
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const unitInPixels = (osmd.GraphicSheet as any).UnitInPixels || 10
 
-        // Calculate Score Bounds (Start of M1 to End of Last Measure)
+        // ... [Existing Bounds Logic] ...
         let minScoreX = Number.MAX_VALUE
         let maxScoreX = Number.MIN_VALUE
-
-        // Check M1 (Start)
         if (measureList.length > 0) {
-            const m1 = measureList[0]
-            m1.forEach(staff => {
+            measureList[0].forEach(staff => {
                 const pos = staff.PositionAndShape
                 const left = (pos.AbsolutePosition.x + pos.BorderLeft) * unitInPixels
                 if (left < minScoreX) minScoreX = left
             })
-        }
-
-        // Check Last Measure (End)
-        if (measureList.length > 0) {
             const mLast = measureList[measureList.length - 1]
             mLast.forEach(staff => {
                 const pos = staff.PositionAndShape
@@ -100,36 +115,82 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                 if (right > maxScoreX) maxScoreX = right
             })
         }
-
-        // Default if empty
         if (minScoreX === Number.MAX_VALUE) minScoreX = 0
         if (maxScoreX === Number.MIN_VALUE) maxScoreX = 0
-
         setScoreBounds({ start: minScoreX, end: maxScoreX })
 
-        // Build Measure X Map
         const newMeasureXMap = new Map<number, number>()
 
         measureList.forEach((staves, index) => {
             const measureNumber = index + 1
-            // Use the first staff (usually Piano right hand) for X positioning
+
+            // 1. Basic Measure X Map
             if (staves.length > 0) {
                 const staffMeasure = staves[0]
                 const pos = staffMeasure.PositionAndShape
-
-                // Calculate absolute X position in pixels
-                // AbsolutePosition.x is the system offset
-                // BorderLeft is the start of the measure relative to that
                 const absoluteX = (pos.AbsolutePosition.x + pos.BorderLeft) * unitInPixels
-
                 newMeasureXMap.set(measureNumber, absoluteX)
+            }
+
+            // 2. BEAT MAPPING (New Logic)
+            try {
+                // Get Time Signature from the SourceMeasure (Source data, not graphical)
+                const sourceMeasure = osmd.Sheet.SourceMeasures[index]
+                // Default to 4/4 if undefined
+                const numerator = sourceMeasure.ActiveTimeSignature ? sourceMeasure.ActiveTimeSignature.Numerator : 4
+                // We only care about the numerator for beat counting usually (3/4 = 3 beats)
+                newMeasureBeatCountMap.set(measureNumber, numerator)
+
+                // Calculate X position for each beat
+                const beatPositions = new Map<number, number>()
+
+                // We need the graphical width to interpolate if no notes exist
+                let mStart = 0, mEnd = 0
+                if (staves[0]) {
+                    const pos = staves[0].PositionAndShape
+                    mStart = (pos.AbsolutePosition.x + pos.BorderLeft) * unitInPixels
+                    mEnd = (pos.AbsolutePosition.x + pos.BorderRight) * unitInPixels
+                }
+                const mWidth = mEnd - mStart
+
+                for (let b = 1; b <= numerator; b++) {
+                    // Target fraction of measure (e.g., Beat 1=0.0, Beat 2=0.33 in 3/4)
+                    const targetFraction = (b - 1) / numerator
+
+                    // Strategy: Find graphical staff entry closest to this fraction
+                    let bestX = mStart + (mWidth * targetFraction) // Default to linear
+
+                    // Search all staves in this measure
+                    staves.forEach(staffMeasure => {
+                        staffMeasure.staffEntries.forEach(entry => {
+                            const relX = entry.PositionAndShape.RelativePosition.x * unitInPixels
+                            // Re-calculate linear X for this beat
+                            const linearX = mStart + (mWidth * targetFraction)
+                            const actualEntryX = (staffMeasure.PositionAndShape.AbsolutePosition.x * unitInPixels) + relX
+
+                            const diff = Math.abs(actualEntryX - linearX)
+
+                            // If this note is closer to the theoretical linear beat position than previous best
+                            // AND it's within a reasonable threshold (e.g. 15% of measure), snap to it.
+                            if (diff < (mWidth / numerator) * 0.4) {
+                                bestX = actualEntryX
+                            }
+                        })
+                    })
+                    beatPositions.set(b, bestX)
+                }
+                newBeatXMap.set(measureNumber, beatPositions)
+
+            } catch (e) {
+                console.warn("Error calculating beats for measure", measureNumber, e)
             }
         })
 
         setMeasureXMap(newMeasureXMap)
+        beatXMapRef.current = newBeatXMap
+        if (onBeatMapLoaded) onBeatMapLoaded(newMeasureBeatCountMap)
 
-        // A. Calculate Measure Boundaries
-        // We assume measures are sorted by index, and generally by X position for a scrolling view.
+        // ... [Existing Bounds & Note Map Logic] ...
         const measureBounds: { index: number, left: number, right: number }[] = []
         measureList.forEach((staves, index) => {
             const measureNumber = index + 1
@@ -143,7 +204,6 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                 if (right > maxX) maxX = right
             })
             if (minX < Number.MAX_VALUE) {
-                // Add padding for hit testing
                 measureBounds.push({
                     index: measureNumber,
                     left: (minX * unitInPixels) - 5,
@@ -152,8 +212,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
             }
         })
 
-        // B. Note Map (Timing/Coloring)
-        // ... (Existing logic for NoteMap is efficient enough as it iterates logical notes, not DOM)
+        // ... (Existing Note Map Population) ...
         measureList.forEach((measureStaves, measureIndex) => {
             const measureNumber = measureIndex + 1
             const measureNotes: NoteData[] = []
@@ -180,13 +239,18 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                                     if (!element) element = document.getElementById(`vf-${vfId}`)
                                     if (element) {
                                         const group = element.closest('.vf-stavenote') as HTMLElement || element as HTMLElement
-                                        const childPaths = group.querySelectorAll('path')
-                                        childPaths.forEach(p => {
-                                            const pathEl = p as unknown as HTMLElement
-                                            pathEl.style.transformBox = 'fill-box'
-                                            pathEl.style.transformOrigin = 'center'
-                                            pathEl.style.transition = 'transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275), fill 0.1s, stroke 0.1s'
+
+                                        // --- FIX: PREPARE ALL NOTE PARTS FOR ANIMATION ---
+                                        // Include 'rect' for stems, 'path' for heads/flags
+                                        const parts = group.querySelectorAll('path, rect')
+                                        parts.forEach(p => {
+                                            const el = p as HTMLElement
+                                            // Critical for "pop" to scale from center of note
+                                            el.style.transformBox = 'fill-box'
+                                            el.style.transformOrigin = 'center'
+                                            el.style.transition = 'transform 0.1s ease-out, fill 0.1s, stroke 0.1s'
                                         })
+
                                         measureNotes.push({
                                             id: vfId, measureIndex: measureNumber, timestamp: relativeTimestamp,
                                             element: group, stemElement: null
@@ -201,103 +265,36 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
             if (measureNotes.length > 0) newNoteMap.set(measureNumber, measureNotes)
         })
 
-        // C. Stem Scanner (DOM Based - keeping as it targets finite stems)
-        const allStems = Array.from(containerRef.current.querySelectorAll('.vf-stem'))
-        allStems.forEach(stem => {
-            const stemRect = stem.getBoundingClientRect()
-            const stemX = stemRect.left + (stemRect.width / 2)
-            let closestNote: NoteData | null = null
-            let minDist = 15
-            // Optimization: Only search notes in visible range or optimize this lookup?
-            // For now, linear walk of newNoteMap is acceptable as map size is managed.
-            newNoteMap.forEach(notes => {
-                notes.forEach(note => {
-                    if (note.element) {
-                        const noteRect = note.element.getBoundingClientRect()
-                        const noteX = noteRect.left + (noteRect.width / 2)
-                        const dist = Math.abs(stemX - noteX)
-                        if (dist < minDist) {
-                            minDist = dist
-                            closestNote = note
-                        }
-                    }
-                })
-            })
-            if (closestNote) (closestNote as NoteData).stemElement = stem as HTMLElement
-        })
-
-        // D. UNIVERSAL CONTENT MAP (Visibility & Coloring) - CRITICAL OPTIMIZATION
+        // ... (Existing Content Map Logic) ...
         const selector = 'svg path, svg rect, svg text'
-        const allElements = containerRef.current.querySelectorAll(selector) // NodeList (faster than Array.from)
-        const containerRect = containerRef.current.getBoundingClientRect()
-        const containerLeft = containerRect.left
-
-        // Helper: Binary Search for Measure Index
+        const allElements = containerRef.current.querySelectorAll(selector)
+        const containerLeft = containerRef.current.getBoundingClientRect().left
         const findMeasureForX = (x: number) => {
-            let low = 0
-            let high = measureBounds.length - 1
+            let low = 0, high = measureBounds.length - 1
             while (low <= high) {
                 const mid = Math.floor((low + high) / 2)
                 const bound = measureBounds[mid]
-                if (x >= bound.left && x <= bound.right) {
-                    return bound
-                } else if (x < bound.left) {
-                    high = mid - 1
-                } else {
-                    low = mid + 1
-                }
+                if (x >= bound.left && x <= bound.right) return bound
+                else if (x < bound.left) high = mid - 1
+                else low = mid + 1
             }
             return null
         }
-
-        // Loop optimization: for loop is faster than forEach
         for (let i = 0; i < allElements.length; i++) {
             const element = allElements[i] as HTMLElement
-
-            // Skip hidden elements check if possible, or assume all rendered elements are visible
-            // removing getComputedStyle check improves perf massively.
-            // SVG elements usually don't have display:none unless we put it there.
-
             const rect = element.getBoundingClientRect()
-
-            // Basic classification based on classes (VexFlow adds classes)
-            // .vf-stavenote, .vf-beam, .vf-rest, .vf-clef...
-            // Note: classList.contains is fast.
             const cl = element.classList
-            // Check if it's a known VexFlow musical element or child of one
-            const isMusical = cl.contains('vf-stavenote') || cl.contains('vf-beam') ||
-                cl.contains('vf-rest') || cl.contains('vf-clef') ||
-                cl.contains('vf-keysignature') || cl.contains('vf-timesignature') ||
-                cl.contains('vf-stem') || cl.contains('vf-modifier') ||
-                element.closest('.vf-stavenote, .vf-beam, .vf-rest, .vf-clef, .vf-keysignature, .vf-timesignature, .vf-stem, .vf-modifier') !== null
+            const isMusical = cl.contains('vf-stavenote') || cl.contains('vf-beam') || cl.contains('vf-rest') || cl.contains('vf-clef') || cl.contains('vf-keysignature') || cl.contains('vf-timesignature') || cl.contains('vf-stem') || cl.contains('vf-modifier') || element.closest('.vf-stavenote, .vf-beam, .vf-rest, .vf-clef, .vf-keysignature, .vf-timesignature, .vf-stem, .vf-modifier') !== null
 
-            // Detect Staff Lines (Geometry heuristic)
             if (!isMusical) {
-                // Staff lines are typically wide and thin
-                const isWide = rect.width > 50
-                const isThin = rect.height < 3
-                if (isWide && isThin) {
-                    newStaffLines.push(element)
-                    continue // Done with this element
-                }
+                if (rect.width > 50 && rect.height < 3) { newStaffLines.push(element); continue }
             }
-
-            // It's a Symbol (Note, Ledger Line, Clef, Text, etc.)
             newAllSymbols.push(element)
-
-            // Bucket into measure using Binary Search instead of Linear Find
             const elCenterX = (rect.left - containerLeft) + (rect.width / 2)
-
-            // Optimization: Most elements are in the "current" or "next" measure relative to previous loop
-            // But simple binary search is O(log M), very fast.
             const match = findMeasureForX(elCenterX)
-
             if (match) {
                 let mList = newMeasureContentMap.get(match.index)
-                if (!mList) {
-                    mList = []
-                    newMeasureContentMap.set(match.index, mList)
-                }
+                if (!mList) { mList = []; newMeasureContentMap.set(match.index, mList) }
                 mList.push(element)
             }
         }
@@ -308,28 +305,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
         allSymbolsRef.current = newAllSymbols
         console.timeEnd('[ScoreViewerScroll] Spatial Map Build')
 
-    }, [])
-
-    // ... (Init Effect) - REMOVED (Handled by hook)
-    /*
-    useEffect(() => {
-        if (!containerRef.current || osmdRef.current) return
-        const osmd = new OSMD(containerRef.current, {
-            autoResize: true, followCursor: false, drawTitle: true, drawSubtitle: false,
-            drawComposer: false, drawCredits: false, drawPartNames: true, drawMeasureNumbers: true,
-            renderSingleHorizontalStaffline: true
-        })
-        osmdRef.current = osmd
-        const xmlUrl = musicXmlUrl || '/c-major-exercise.musicxml'
-        osmd.load(xmlUrl).then(() => {
-            osmd.render()
-            setTimeout(() => { osmd.render(); calculateNoteMap() }, 100)
-            calculateNoteMap()
-            setIsLoaded(true)
-        }).catch((err) => console.error(err))
-        return () => { osmdRef.current = null; setIsLoaded(false) }
-    }, [musicXmlUrl, calculateNoteMap])
-    */
+    }, [onBeatMapLoaded])
 
     // We still need to trigger map calculation when loaded
     useEffect(() => {
@@ -345,26 +321,84 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
         return () => window.removeEventListener('resize', handleResize)
     }, [calculateNoteMap])
 
-    // ... (Find Measure Helper)
-    const findCurrentMeasure = useCallback((time: number) => {
-        if (anchors.length === 0) return { measure: 1, progress: 0 }
-        const sortedAnchors = [...anchors].sort((a, b) => a.time - b.time)
-        let currentMeasure = 1, measureStartTime = 0, measureEndTime = Infinity
-        for (let i = 0; i < sortedAnchors.length; i++) {
-            const anchor = sortedAnchors[i]
-            if (time >= anchor.time) {
-                currentMeasure = anchor.measure; measureStartTime = anchor.time
-                if (i + 1 < sortedAnchors.length) measureEndTime = sortedAnchors[i + 1].time
-                else measureEndTime = Infinity
-            } else break
+    // === MODIFIED: findCurrentPosition (Handles Beats) ===
+    const findCurrentPosition = useCallback((time: number) => {
+        // 1. Fallback to Measure Mapping if no beats
+        if (!beatAnchors || beatAnchors.length === 0) {
+            if (anchors.length === 0) return { measure: 1, beat: 1, progress: 0 }
+            const sorted = [...anchors].sort((a, b) => a.time - b.time)
+
+            // Find current Measure interval
+            let currentM = 1, startT = 0, endT = Infinity
+            for (let i = 0; i < sorted.length; i++) {
+                if (time >= sorted[i].time) {
+                    currentM = sorted[i].measure
+                    startT = sorted[i].time
+                    if (i + 1 < sorted.length) endT = sorted[i + 1].time
+                    else endT = Infinity
+                } else break
+            }
+
+            let progress = 0
+            if (endT !== Infinity && endT > startT) {
+                progress = (time - startT) / (endT - startT)
+                progress = Math.max(0, Math.min(1, progress))
+            }
+            return { measure: currentM, beat: 1, progress, isBeatInterpolation: false }
         }
+
+        // 2. Beat Mapping Logic
+        // Combine Measure Anchors (Beat 1) and Beat Anchors into one timeline
+        const allPoints: { measure: number, beat: number, time: number }[] = []
+
+        // Add implicit Beat 1s from Measure Anchors
+        anchors.forEach(a => {
+            allPoints.push({ measure: a.measure, beat: 1, time: a.time })
+        })
+
+        // Add explicit Beat Anchors
+        beatAnchors.forEach(b => {
+            allPoints.push({ measure: b.measure, beat: b.beat, time: b.time })
+        })
+
+        // Sort by time
+        allPoints.sort((a, b) => a.time - b.time)
+
+        // Find interval
+        let currentP = allPoints[0]
+        let nextP = null
+
+        for (let i = 0; i < allPoints.length; i++) {
+            if (time >= allPoints[i].time) {
+                currentP = allPoints[i]
+                nextP = (i + 1 < allPoints.length) ? allPoints[i + 1] : null
+            } else {
+                break
+            }
+        }
+
         let progress = 0
-        if (measureEndTime !== Infinity && measureEndTime > measureStartTime) {
-            progress = (time - measureStartTime) / (measureEndTime - measureStartTime)
-            progress = Math.max(0, Math.min(1, progress))
+        if (nextP) {
+            const duration = nextP.time - currentP.time
+            if (duration > 0) {
+                progress = (time - currentP.time) / duration
+                progress = Math.max(0, Math.min(1, progress))
+            }
         }
-        return { measure: currentMeasure, progress }
-    }, [anchors])
+
+        // Helper to handle edge case where we might be before any points
+        if (!currentP) return { measure: 1, beat: 1, progress: 0, isBeatInterpolation: true }
+
+        return {
+            measure: currentP.measure,
+            beat: currentP.beat,
+            nextMeasure: nextP?.measure,
+            nextBeat: nextP?.beat,
+            progress,
+            isBeatInterpolation: true
+        }
+
+    }, [anchors, beatAnchors])
 
     // Helper: Coloring
     const applyColor = (element: HTMLElement, color: string) => {
@@ -417,14 +451,14 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
             measureContentMap.current.forEach(elements => elements.forEach(el => el.style.opacity = '1'))
         }
         if (revealMode === 'NOTE' && audioRef.current) {
-            const { measure } = findCurrentMeasure(audioRef.current.currentTime)
+            const { measure } = findCurrentPosition(audioRef.current.currentTime)
             updateMeasureVisibility(measure)
         }
         if (revealMode === 'CURTAIN') {
             measureContentMap.current.forEach(elements => elements.forEach(el => el.style.opacity = '1'))
         }
         prevRevealModeRef.current = revealMode
-    }, [revealMode, updateMeasureVisibility, findCurrentMeasure, audioRef])
+    }, [revealMode, updateMeasureVisibility, findCurrentPosition, audioRef])
 
     // === DARK MODE EFFECT ===
     useEffect(() => {
@@ -459,66 +493,78 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
         const osmd = osmdRef.current
         if (!osmd || !isLoaded || !osmd.GraphicSheet) return
 
-        const { measure, progress } = findCurrentMeasure(audioTime)
-        const effectiveProgress = progress
+        const posData = findCurrentPosition(audioTime)
+        const { measure, beat, progress, isBeatInterpolation } = posData
         const currentMeasureIndex = measure - 1
 
         try {
             const measureList = osmd.GraphicSheet.MeasureList
-            if (!measureList || measureList.length === 0 || currentMeasureIndex >= measureList.length) return
+            if (!measureList || currentMeasureIndex >= measureList.length) return
             const measureStaves = measureList[currentMeasureIndex]
             if (!measureStaves || measureStaves.length === 0) return
 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const unitInPixels = (osmd.GraphicSheet as any).UnitInPixels || 10
 
-            // 1. Calculate Cursor Geometry (STABILIZED)
+            // 1. Get Vertical Bounds (Staff height)
             let firstStaffY = Number.MAX_VALUE
             let lastStaffY = Number.MIN_VALUE
-            let minX = Number.MAX_VALUE
-            let maxX = Number.MIN_VALUE
-            let minNoteX = Number.MAX_VALUE
-
             measureStaves.forEach(staffMeasure => {
                 const pos = staffMeasure.PositionAndShape
-                if (!pos) return
-
-                // Y-Axis: Track the STAFF LINES only (Stable)
                 const absY = pos.AbsolutePosition.y
                 if (absY < firstStaffY) firstStaffY = absY
                 if (absY > lastStaffY) lastStaffY = absY
-
-                // X-Axis: Track the Bounding Box (Variable width is okay)
-                const absX = pos.AbsolutePosition.x
-                if (absX + pos.BorderLeft < minX) minX = absX + pos.BorderLeft
-                if (absX + pos.BorderRight > maxX) maxX = absX + pos.BorderRight
-
-                // Note tracking for start offset
-                if (staffMeasure.staffEntries.length > 0) {
-                    const firstEntry = staffMeasure.staffEntries[0]
-                    const noteAbsX = absX + firstEntry.PositionAndShape.RelativePosition.x
-                    if (noteAbsX < minNoteX) minNoteX = noteAbsX
-                }
             })
-
-            // Calculate Fixed System Height (Stable)
-            // 4 units is roughly the height of a 5-line staff. We add padding around it.
-            const topPadding = 4
-            const bottomPadding = 8
-
+            const topPadding = 4, bottomPadding = 8
             const systemTop = (firstStaffY - topPadding) * unitInPixels
             const systemHeight = ((lastStaffY - firstStaffY) + bottomPadding + topPadding) * unitInPixels
 
-            // Calculate Cursor X (Dynamic)
-            const paddingPixels = 12
-            const paddingUnits = paddingPixels / unitInPixels
-            let visualStartX = minX
-            if (measure === 1 && minNoteX < Number.MAX_VALUE) {
-                visualStartX = Math.max(minX, minNoteX - paddingUnits)
+            // 2. Calculate Cursor X
+            let cursorX = 0
+
+            if (isBeatInterpolation && beatXMapRef.current.has(measure)) {
+                // --- BEAT INTERPOLATION MODE ---
+                const beatsInMeasure = beatXMapRef.current.get(measure)!
+
+                // Get Start X (Current Beat)
+                let startX = beatsInMeasure.get(beat)
+
+                // Fallback if beat map missing specific beat (shouldn't happen with correct map)
+                if (startX === undefined) {
+                    const pos = measureStaves[0].PositionAndShape
+                    startX = (pos.AbsolutePosition.x + pos.BorderLeft) * unitInPixels
+                }
+
+                // Get End X (Next Beat or End of Measure)
+                let endX = 0
+
+                // Case A: Transitioning to a beat inside same measure
+                if (posData.nextMeasure === measure && posData.nextBeat) {
+                    // Try to get next beat position
+                    endX = beatsInMeasure.get(posData.nextBeat) || startX
+                }
+                // Case B: Transitioning to next measure
+                else {
+                    // Use end of current measure (BorderRight)
+                    const pos = measureStaves[0].PositionAndShape
+                    endX = (pos.AbsolutePosition.x + pos.BorderRight) * unitInPixels
+                }
+
+                cursorX = startX + ((endX - startX) * progress)
+
+            } else {
+                // --- LEGACY MEASURE MODE (Linear) ---
+                let minX = Number.MAX_VALUE, maxX = Number.MIN_VALUE
+                measureStaves.forEach(staffMeasure => {
+                    const pos = staffMeasure.PositionAndShape
+                    const absX = pos.AbsolutePosition.x
+                    if (absX + pos.BorderLeft < minX) minX = absX + pos.BorderLeft
+                    if (absX + pos.BorderRight > maxX) maxX = absX + pos.BorderRight
+                })
+                const startPixel = minX * unitInPixels
+                const endPixel = maxX * unitInPixels
+                cursorX = startPixel + ((endPixel - startPixel) * progress)
             }
-            const systemX = visualStartX * unitInPixels
-            const systemWidth = (maxX - visualStartX) * unitInPixels
-            const cursorX = systemX + (systemWidth * effectiveProgress)
 
             // Update Cursor DOM
             if (cursorRef.current) {
@@ -530,179 +576,109 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                 cursorRef.current.style.boxShadow = mode === 'RECORD' ? '0 0 10px rgba(239, 68, 68, 0.4)' : '0 0 8px rgba(16, 185, 129, 0.5)'
             }
 
-            // 2. Scroll Logic
+            // [Scrolling Logic]
             if (scrollContainerRef.current) {
                 const container = scrollContainerRef.current
                 const containerWidth = container.clientWidth
-
-                // DYNAMIC TARGET: Use user defined percentage
                 const targetScrollLeft = cursorX - (containerWidth * cursorPosition)
-
-                // A. LOCKED MODE (Continuous Scroll)
-                // Only enforce lock when Playing to allow manual navigation when Paused
-                const isPlaying = audioRef.current && !audioRef.current.paused && mode !== 'RECORD' // Record mode handles its own flow? Or treat same?
-                // Actually, simply checking !paused covers Playback. Record might not have audioRef playing? 
-                // Let's stick to audioRef.paused check as primary gate for Playback.
+                const isPlaying = audioRef.current && !audioRef.current.paused && mode !== 'RECORD'
 
                 if (isLocked && isPlaying) {
-                    const currentScroll = container.scrollLeft
-                    const diff = Math.abs(currentScroll - targetScrollLeft)
-                    const isUserControlling = diff > 250
-
-                    if (!isUserControlling) container.scrollLeft = targetScrollLeft
-
+                    const diff = Math.abs(container.scrollLeft - targetScrollLeft)
+                    if (diff < 250) container.scrollLeft = targetScrollLeft
                     if (currentMeasureIndex !== lastMeasureIndexRef.current && diff > 50) {
                         container.scrollTo({ left: targetScrollLeft, behavior: 'smooth' })
                     }
-                }
-                // B. FREE MODE (Measure Scroll)
-                else {
-                    // Only scroll when we enter a NEW measure
+                } else {
                     if (currentMeasureIndex !== lastMeasureIndexRef.current) {
-                        // Snap the new measure to the anchor point
                         container.scrollTo({ left: targetScrollLeft, behavior: 'smooth' })
                     }
                 }
             }
 
-            // 3. Mode Specific Logic
-
-            // A. CURTAIN MODE (Fixed Width)
+            // [Curtain & Note Mode Logic]
             if (curtainRef.current) {
                 if (revealMode === 'CURTAIN') {
                     curtainRef.current.style.display = 'block'
                     curtainRef.current.style.backgroundColor = darkMode ? '#222222' : '#ffffff'
-
-                    // MAPPING: 0% -> 0px offset (Curtain touches cursor), 100% -> 600px offset
-                    const maxPixelOffset = 600
-                    const offset = curtainLookahead * maxPixelOffset
+                    const offset = curtainLookahead * 600
                     const curtainStart = cursorX + offset
-
-                    // Calculate Width (End of Score - Curtain Start)
                     const lastMeasure = measureList[measureList.length - 1][0]
                     const totalScoreWidth = (lastMeasure.PositionAndShape.AbsolutePosition.x + lastMeasure.PositionAndShape.BorderRight) * unitInPixels
                     const requiredWidth = Math.max(0, totalScoreWidth - curtainStart + 800)
-
                     curtainRef.current.style.left = `${curtainStart}px`
                     curtainRef.current.style.width = `${requiredWidth}px`
-                    // FIX: Match height to full score content for vertical scrolling
                     const scrollHeight = containerRef.current?.scrollHeight || 0
                     const clientHeight = containerRef.current?.clientHeight || 0
                     curtainRef.current.style.height = `${Math.max(scrollHeight, clientHeight)}px`
-                    curtainRef.current.style.bottom = 'auto'
                 } else {
                     curtainRef.current.style.display = 'none'
-                    curtainRef.current.style.width = '0px'
                 }
             }
-
-            // B. NOTE MODE
             if (revealMode === 'NOTE') {
-                if (currentMeasureIndex !== lastMeasureIndexRef.current) {
-                    updateMeasureVisibility(measure)
-                }
-
-                // Spatial Reveal Logic
+                if (currentMeasureIndex !== lastMeasureIndexRef.current) updateMeasureVisibility(measure)
                 const currentElements = measureContentMap.current.get(measure)
                 if (currentElements && containerRef.current) {
                     const containerRect = containerRef.current.getBoundingClientRect()
                     currentElements.forEach(el => {
                         const rect = el.getBoundingClientRect()
                         const elLeft = rect.left - containerRect.left
-
-                        // Lookahead: Show items 15px before cursor hits them
-                        if (elLeft > cursorX + 15) {
-                            el.style.opacity = '0'
-                        } else {
-                            el.style.opacity = '1'
-                        }
+                        // FIX: Reduced lookahead buffer from 15px to 2px to prevent notes revealing too early
+                        // User reported seeing black notes before green highlight due to excessive lookahead.
+                        if (elLeft > cursorX + 2) el.style.opacity = '0'
+                        else el.style.opacity = '1'
                     })
                 }
             }
 
             lastMeasureIndexRef.current = currentMeasureIndex
 
-            // 4. Karaoke (Coloring & FX)
+            // [Karaoke Coloring]
             const notesInMeasure = noteMap.current.get(measure)
-
-
-
             if (notesInMeasure && mode === 'PLAYBACK') {
-                const fullMeasureWidth = maxX - minX
-                const activeWidth = maxX - visualStartX
-                const startOffset = visualStartX - minX
-                const offsetRatio = fullMeasureWidth > 0 ? startOffset / fullMeasureWidth : 0
-                const scaleRatio = fullMeasureWidth > 0 ? activeWidth / fullMeasureWidth : 1
-                const highlightProgress = offsetRatio + (effectiveProgress * scaleRatio)
 
-                // 1. Define Palettes
+                let globalMeasureProgress = 0
+                if (isBeatInterpolation && beatXMapRef.current.has(measure)) {
+                    const numerator = beatXMapRef.current.get(measure)!.size
+                    // Roughly: ((beat - 1) + progress) / numerator
+                    globalMeasureProgress = ((beat - 1) + progress) / numerator
+                } else {
+                    globalMeasureProgress = progress
+                }
+
                 const defaultColor = darkMode ? '#e0e0e0' : '#000000'
-                const highlightColor = '#10B981' // Green
-                const shadowColor = '#10B981'    // Green Glow
+                const highlightColor = '#10B981'; const shadowColor = '#10B981'
 
                 notesInMeasure.forEach(noteData => {
                     if (!noteData.element) return
-
                     const lookahead = 0.04
                     const noteEndThreshold = noteData.timestamp + 0.01
-                    const isActive = (highlightProgress <= noteEndThreshold && highlightProgress >= noteData.timestamp - lookahead)
+                    const isActive = (globalMeasureProgress <= noteEndThreshold && globalMeasureProgress >= noteData.timestamp - lookahead)
 
-                    // 2. Determine Target Styles
                     let targetFill = defaultColor
                     let targetFilter = 'none'
                     let targetTransform = 'scale(1) translateY(0)'
 
                     if (isActive) {
-                        // Color
                         if (highlightNote) targetFill = highlightColor
-
-                        // Glow (Filter)
                         if (glowEffect) targetFilter = `drop-shadow(0 0 6px ${shadowColor})`
-
-                        // Pop & Jump (Transform)
                         const scale = popEffect ? 1.4 : 1
                         const jump = jumpEffect ? -10 : 0
                         targetTransform = `scale(${scale}) translateY(${jump}px)`
                     }
-
-                    // 3. Apply Styles (Explicitly Set Everything)
-
-                    // A. Apply Color (Fill/Stroke)
                     applyColor(noteData.element, targetFill)
                     if (noteData.stemElement) applyColor(noteData.stemElement, targetFill)
-
-                    // B. Apply Filter (Glow) - Only to Parent Group to avoid Double Shadow
-                    // Note: VexFlow StaveNotes are Groups. Stems are often children. 
-                    // Applying filter to Group handles everything.
                     noteData.element.style.filter = targetFilter
 
-                    // Safety: If stem is detached (not a child), apply filter to it too. 
-                    // If it IS a child, the parent filter already covers it.
-                    if (noteData.stemElement && !noteData.element.contains(noteData.stemElement)) {
-                        noteData.stemElement.style.filter = targetFilter
-                    }
-
-                    // C. Apply Transform (Pop/Jump) - To Child Paths Only
-                    const paths = noteData.element.querySelectorAll('path')
-                    paths.forEach(p => (p as unknown as HTMLElement).style.transform = targetTransform)
+                    // Apply Transform to children (paths AND rects/stems)
+                    // We target both to ensure the whole note pops, not just the head
+                    const parts = noteData.element.querySelectorAll('path, rect')
+                    parts.forEach(p => (p as unknown as HTMLElement).style.transform = targetTransform)
                 })
             }
 
-            // Record Mode Reset
-            if (mode === 'RECORD' && notesInMeasure) {
-                const defaultColor = darkMode ? '#e0e0e0' : '#000000'
-                notesInMeasure.forEach(noteData => {
-                    if (noteData.element) {
-                        applyColor(noteData.element, defaultColor)
-                        if (popEffect) noteData.element.style.filter = 'none'
-                    }
-                })
-            }
-
-        } catch (err) {
-            console.error('Error positioning cursor:', err)
-        }
-    }, [findCurrentMeasure, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead])
+        } catch (err) { console.error(err) }
+    }, [findCurrentPosition, isLoaded, mode, revealMode, updateMeasureVisibility, popEffect, jumpEffect, glowEffect, darkMode, highlightNote, cursorPosition, isLocked, curtainLookahead, showCursor])
 
     // ... (Animation Loop)
     useEffect(() => {
@@ -856,7 +832,41 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                         </div>
                     )
                 })}
+
+                {/* --- LEVEL 2 MARKERS (Yellow) --- */}
+                {mode === 'RECORD' && duration > 0 && beatAnchors.length > 0 && beatAnchors.map((bAnchor) => {
+                    // Find Beat X
+                    const beatMap = beatXMapRef.current.get(bAnchor.measure)
+                    const leftPixel = beatMap ? beatMap.get(bAnchor.beat) : 0
+                    if (!leftPixel) return null
+
+                    return (
+                        <div key={`b-${bAnchor.measure}-${bAnchor.beat}`}
+                            className="absolute top-6 flex flex-col items-center group z-[1000] cursor-ew-resize pointer-events-auto hover:scale-110 transition-transform origin-top"
+                            style={{ left: `${leftPixel}px`, transform: 'translateX(-50%)' }}
+                            onMouseDown={(e: React.MouseEvent) => {
+                                e.stopPropagation(); const startX = e.clientX; const initialTime = bAnchor.time
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                const secondsPerPixel = duration / ((containerRef.current?.scrollWidth as any) || 1000)
+                                const handleMove = (ev: MouseEvent) => {
+                                    const newTime = Math.max(0, initialTime + (ev.clientX - startX) * secondsPerPixel)
+                                    if (onUpdateBeatAnchor) onUpdateBeatAnchor(bAnchor.measure, bAnchor.beat, newTime)
+                                }
+                                const handleUp = () => { window.removeEventListener('mousemove', handleMove); window.removeEventListener('mouseup', handleUp) }
+                                window.addEventListener('mousemove', handleMove); window.addEventListener('mouseup', handleUp)
+                            }}
+                        >
+                            <div className="bg-yellow-500/90 text-black text-[8px] font-bold px-1 rounded-sm shadow-sm mb-0.5 whitespace-nowrap select-none">
+                                {bAnchor.beat}
+                            </div>
+                            <div className="w-0.5 h-full bg-yellow-500/50 shadow-[0_0_2px_rgba(0,0,0,0.3)]"></div>
+                        </div>
+                    )
+                })}
             </div>
         </div>
     )
 }
+
+// MEMOIZE TO FIX FLASHING
+export const ScrollView = memo(ScrollViewComponent)

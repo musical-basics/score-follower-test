@@ -19,6 +19,14 @@ interface AnchorSidebarProps {
     handleAudioSelect?: (e: React.ChangeEvent<HTMLInputElement>) => void
     handleXmlSelect?: (e: React.ChangeEvent<HTMLInputElement>) => void
     toggleMode?: () => void
+    // Level 2
+    isLevel2Mode?: boolean
+    toggleLevel2?: () => void
+    regenerateBeats?: () => void
+    beatAnchors?: { measure: number, beat: number, time: number }[]
+    upsertBeatAnchor?: (measure: number, beat: number, time: number) => void
+    subdivision?: number // NEW
+    setSubdivision?: (val: number) => void // NEW
 }
 
 // Note: I'm adding functional props here (upsert, delete, etc.) to ensure it actually works 
@@ -26,7 +34,9 @@ interface AnchorSidebarProps {
 export function AnchorSidebar({
     anchors, darkMode, upsertAnchor, handleDelete, handleRestamp,
     handleJumpToMeasure, handleTap, handleReset, mode, currentMeasure,
-    handleAudioSelect, handleXmlSelect, toggleMode
+    handleAudioSelect, handleXmlSelect, toggleMode,
+    isLevel2Mode, toggleLevel2, regenerateBeats, beatAnchors = [], upsertBeatAnchor,
+    subdivision, setSubdivision
 }: AnchorSidebarProps) {
 
     // Derived state for rendering ghost measures
@@ -59,6 +69,33 @@ export function AnchorSidebar({
                     </div>
                 </div>
             )
+
+            // LEVEL 2 BEATS rendering
+            if (isLevel2Mode && beatAnchors && beatAnchors.length > 0) {
+                const beats = beatAnchors.filter(b => b.measure === m).sort((a, b) => a.beat - b.beat)
+                if (beats.length > 0) {
+                    rows.push(
+                        <div key={`${m}-beats`} className={`pl-8 pr-2 pb-2 text-xs border-b border-x ${darkMode ? 'bg-[#1a1a1a] border-slate-800' : 'bg-slate-50/50 border-slate-200'}`}>
+                            <div className="grid grid-cols-2 gap-2 mt-1">
+                                {beats.map(b => (
+                                    <div key={`${b.measure}-${b.beat}`} className="flex items-center gap-1 justify-end">
+                                        <span className={`text-[9px] font-bold ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>B{b.beat}</span>
+                                        <input
+                                            type="number" step="0.01"
+                                            value={b.time.toFixed(2)}
+                                            onChange={(e) => upsertBeatAnchor && upsertBeatAnchor(b.measure, b.beat, parseFloat(e.target.value))}
+                                            className={`w-14 text-right text-[10px] border rounded px-1 font-mono focus:outline-none focus:ring-1 focus:ring-yellow-400 ${darkMode
+                                                ? 'bg-slate-800 border-slate-600 text-yellow-500'
+                                                : 'bg-yellow-50 border-yellow-200 text-slate-700 focus:bg-white'
+                                                }`}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )
+                }
+            }
         } else {
             rows.push(
                 <div key={m} className={`flex items-center justify-between p-2 rounded text-xs border border-dashed opacity-60 ${darkMode ? 'border-red-800 bg-red-900/20' : 'border-red-200 bg-red-50'}`}>
@@ -106,8 +143,54 @@ export function AnchorSidebar({
             </div>
 
             <div className={`p-4 border-b ${darkMode ? 'border-slate-800' : 'border-gray-200'}`}>
-                <h2 className={`font-bold text-sm uppercase tracking-wide ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Sync Anchors</h2>
-                <p className={`text-xs mt-1 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>{anchors.length} measures mapped</p>
+                <div className="flex items-center justify-between">
+                    <h2 className={`font-bold text-sm uppercase tracking-wide ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Sync Anchors</h2>
+                    {toggleLevel2 && (
+                        <button
+                            onClick={toggleLevel2}
+                            className={`text-[10px] font-bold px-2 py-1 rounded transition-colors ${isLevel2Mode
+                                ? 'bg-yellow-500 text-white shadow-md'
+                                : (darkMode ? 'bg-slate-700 text-slate-400 hover:bg-slate-600' : 'bg-gray-200 text-gray-500 hover:bg-gray-300')
+                                }`}
+                        >
+                            {isLevel2Mode ? 'L2: ON' : 'L2: OFF'}
+                        </button>
+                    )}
+                </div>
+
+                {/* Subdivision Input */}
+                {isLevel2Mode && setSubdivision && (
+                    <div className="flex items-center justify-between mt-2 pl-1">
+                        <span className={`text-[10px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Beat Subdivision:</span>
+                        <input
+                            type="number" min="2" max="16"
+                            value={subdivision}
+                            onChange={(e) => setSubdivision(parseInt(e.target.value) || 4)}
+                            className={`w-12 text-right text-xs border rounded px-1 ${darkMode ? 'bg-slate-800 border-slate-600 text-yellow-400' : 'bg-white border-gray-300'}`}
+                        />
+                    </div>
+                )}
+
+                <div className="flex justify-between items-end mt-2">
+                    <p className={`text-xs ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>{anchors.length} measures</p>
+                    {isLevel2Mode && (
+                        <span className="text-[10px] text-yellow-500 font-mono">
+                            {beatAnchors?.length || 0} beats
+                        </span>
+                    )}
+                </div>
+
+                {isLevel2Mode && regenerateBeats && (
+                    <button
+                        onClick={regenerateBeats}
+                        className={`mt-3 w-full text-[11px] font-bold py-1.5 rounded border transition-colors shadow-sm ${darkMode
+                            ? 'bg-emerald-900/40 border-emerald-700 text-emerald-400 hover:bg-emerald-800 hover:text-white'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                            }`}
+                    >
+                        {beatAnchors && beatAnchors.length > 0 ? '↻ Regenerate Beats' : '▶ Generate Beats'}
+                    </button>
+                )}
             </div>
 
             <div className={`flex-1 overflow-y-auto p-2 space-y-1 ${darkMode ? 'bg-[#1a1a1a]' : 'bg-slate-50'}`}>
