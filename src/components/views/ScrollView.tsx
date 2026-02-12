@@ -457,7 +457,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
     // === ANIMATION LOOP ===
     const updateCursorPosition = useCallback((audioTime: number) => {
         const osmd = osmdRef.current
-        if (!osmd || !isLoaded || !cursorRef.current || !osmd.GraphicSheet) return
+        if (!osmd || !isLoaded || !osmd.GraphicSheet) return
 
         const { measure, progress } = findCurrentMeasure(audioTime)
         const effectiveProgress = progress
@@ -521,12 +521,14 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
             const cursorX = systemX + (systemWidth * effectiveProgress)
 
             // Update Cursor DOM
-            cursorRef.current.style.left = `${cursorX}px`
-            cursorRef.current.style.top = `${systemTop}px`
-            cursorRef.current.style.height = `${systemHeight}px`
-            cursorRef.current.style.display = showCursor ? 'block' : 'none'
-            cursorRef.current.style.backgroundColor = mode === 'RECORD' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(16, 185, 129, 0.8)'
-            cursorRef.current.style.boxShadow = mode === 'RECORD' ? '0 0 10px rgba(239, 68, 68, 0.4)' : '0 0 8px rgba(16, 185, 129, 0.5)'
+            if (cursorRef.current) {
+                cursorRef.current.style.left = `${cursorX}px`
+                cursorRef.current.style.top = `${systemTop}px`
+                cursorRef.current.style.height = `${systemHeight}px`
+                cursorRef.current.style.display = showCursor ? 'block' : 'none'
+                cursorRef.current.style.backgroundColor = mode === 'RECORD' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(16, 185, 129, 0.8)'
+                cursorRef.current.style.boxShadow = mode === 'RECORD' ? '0 0 10px rgba(239, 68, 68, 0.4)' : '0 0 8px rgba(16, 185, 129, 0.5)'
+            }
 
             // 2. Scroll Logic
             if (scrollContainerRef.current) {
@@ -622,6 +624,8 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
 
             // 4. Karaoke (Coloring & FX)
             const notesInMeasure = noteMap.current.get(measure)
+
+
 
             if (notesInMeasure && mode === 'PLAYBACK') {
                 const fullMeasureWidth = maxX - minX
@@ -794,7 +798,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                 {mode === 'RECORD' && duration > 0 && anchors.map(anchor => {
                     // 1. Get exact visual position from our map
                     const leftPixel = measureXMap.get(anchor.measure) ?? 0
-                    
+
                     // Safety check: don't render if we don't have a position yet
                     if (!measureXMap.has(anchor.measure)) return null
 
@@ -808,7 +812,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                                 e.stopPropagation()
                                 const startX = e.clientX
                                 const initialTime = anchor.time
-                                
+
                                 // Calculate sensitivity: How many seconds per pixel?
                                 // We use the total average (Duration / TotalWidth) to keep dragging consistent
                                 const container = containerRef.current
@@ -821,12 +825,12 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
 
                                 const handleMouseUp = (upEvent: MouseEvent) => {
                                     const diffX = upEvent.clientX - startX
-                                    
+
                                     // Convert drag distance to time difference
                                     // Drag Right (+X) = Increase Time (Later)
                                     // Drag Left (-X) = Decrease Time (Earlier)
                                     const timeDelta = diffX * secondsPerPixel
-                                    
+
                                     // Calculate new time, ensuring it doesn't go below 0
                                     const newTime = Math.max(0, initialTime + timeDelta)
 
@@ -846,7 +850,7 @@ export function ScrollView({ audioRef, anchors, mode, musicXmlUrl, revealMode, p
                             <div className="bg-red-600/90 text-white text-[9px] font-bold px-1 rounded-sm shadow-sm mb-0.5 whitespace-nowrap select-none">
                                 M{anchor.measure}
                             </div>
-                            
+
                             {/* The Arrow/Line */}
                             <div className="w-0.5 h-full bg-red-600/50 shadow-[0_0_2px_rgba(0,0,0,0.3)]"></div>
                         </div>
