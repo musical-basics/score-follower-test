@@ -448,7 +448,7 @@ function App() {
       </div>
 
       {/* WAVEFORM TIMELINE (New) */}
-      {mode === 'RECORD' && audioUrl && (
+      {(mode === 'RECORD' || mode === 'PLAYBACK') && audioUrl && (
         <WaveformTimeline
           audioUrl={audioUrl}
           anchors={anchors}
