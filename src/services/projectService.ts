@@ -26,6 +26,10 @@ export interface Project {
     xml_url: string
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     anchors: any[]
+    // Level 2 Beat Mapping (nullable for backwards compatibility)
+    beat_anchors?: { measure: number; beat: number; time: number }[] | null
+    subdivision?: number | null
+    is_level2?: boolean | null
     created_at: string
     updated_at: string
 }
@@ -53,7 +57,11 @@ export const projectService = {
 
     // Save project metadata to DB
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async saveProject(title: string, audioFile: File, xmlFile: File, anchors: any[]) {
+    async saveProject(
+        title: string, audioFile: File, xmlFile: File, anchors: any[],
+        beatAnchors?: { measure: number; beat: number; time: number }[],
+        subdivision?: number, isLevel2?: boolean
+    ) {
         // 1. Upload files
         console.log('[ProjectService] Uploading audio...')
         const audioUrl = await this.uploadFile(audioFile)
@@ -70,6 +78,9 @@ export const projectService = {
                 audio_url: audioUrl,
                 xml_url: xmlUrl,
                 anchors: anchors,
+                beat_anchors: beatAnchors || [],
+                subdivision: subdivision ?? 4,
+                is_level2: isLevel2 ?? false,
                 updated_at: new Date().toISOString()
             })
             .select()
@@ -78,14 +89,22 @@ export const projectService = {
         return data[0]
     },
 
-    // Update existing project (anchors only)
+    // Update existing project (anchors + beat data)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async updateProject(id: string, anchors: any[], title?: string) {
+    async updateProject(
+        id: string, anchors: any[],
+        beatAnchors?: { measure: number; beat: number; time: number }[],
+        subdivision?: number, isLevel2?: boolean,
+        title?: string
+    ) {
         console.log(`[ProjectService] Updating project ${id}...`)
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const updates: any = {
             anchors: anchors,
+            beat_anchors: beatAnchors || [],
+            subdivision: subdivision ?? 4,
+            is_level2: isLevel2 ?? false,
             updated_at: new Date().toISOString()
         }
 

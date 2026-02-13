@@ -139,7 +139,10 @@ function App() {
         finalXmlFile = await fetchFileFromUrl(urlToFetch, 'score.xml')
       }
 
-      const newProject = await projectService.saveProject(title, finalAudioFile, finalXmlFile, anchors)
+      const newProject = await projectService.saveProject(
+        title, finalAudioFile, finalXmlFile, anchors,
+        beatAnchors, subdivision, isLevel2Mode
+      )
       alert('New project created!')
       const updatedProjects = await projectService.getProjects()
       setProjects(updatedProjects)
@@ -157,7 +160,10 @@ function App() {
   const handleSave = async () => {
     if (!currentProjectId) return
     try {
-      await projectService.updateProject(currentProjectId, anchors)
+      await projectService.updateProject(
+        currentProjectId, anchors,
+        beatAnchors, subdivision, isLevel2Mode
+      )
       alert('Project saved!')
       const updatedProjects = await projectService.getProjects()
       setProjects(updatedProjects)
@@ -173,7 +179,10 @@ function App() {
     setAudioUrl(project.audio_url)
     setXmlUrl(project.xml_url)
     setAnchors(project.anchors)
-    // TODO: persist beatAnchors in project too eventually
+    // Restore Level 2 beat mapping state
+    setBeatAnchors(project.beat_anchors || [])
+    setSubdivision(project.subdivision ?? 4)
+    setIsLevel2Mode(project.is_level2 ?? false)
     setCurrentProjectId(project.id)
     setCurrentProjectTitle(project.title)
     setMode('RECORD')
