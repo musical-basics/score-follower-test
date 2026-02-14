@@ -6,6 +6,7 @@ import { ScoreControls } from './components/controls/ScoreControls'
 import { AnchorSidebar } from './components/controls/AnchorSidebar'
 import { WaveformTimeline } from './components/controls/WaveformTimeline'
 import { PublishModal } from './components/controls/PublishModal'
+import { useRecorder } from './hooks/use-recorder'
 import { projectService, type Project } from './services/projectService'
 export interface Anchor {
   measure: number
@@ -20,6 +21,8 @@ export const DEFAULT_AUDIO = '/c-major-scale.mp3'
 const DEFAULT_XML = '/c-major-exercise.musicxml'
 
 function App() {
+  const { isRecording, startRecording, stopRecording } = useRecorder()
+  const [recordedVideo, setRecordedVideo] = useState<File | null>(null)
   const [revealMode, setRevealMode] = useState<'OFF' | 'NOTE' | 'CURTAIN'>('OFF')
   const [popEffect, setPopEffect] = useState(false)
   const [jumpEffect, setJumpEffect] = useState(true)
@@ -363,8 +366,26 @@ function App() {
     }
   }, [mode, anchors.length])
 
-  const handleEnded = useCallback(() => {
-  }, [])
+  const handleRecordMaster = useCallback(async () => {
+    const started = await startRecording()
+    if (started) {
+      // Wait for UI to hide, then auto-play from start
+      setTimeout(() => {
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0
+          audioRef.current.play()
+        }
+      }, 500)
+    }
+  }, [startRecording])
+
+  const handleEnded = useCallback(async () => {
+    if (isRecording) {
+      const videoFile = await stopRecording()
+      setRecordedVideo(videoFile)
+      setIsPublishModalOpen(true)
+    }
+  }, [isRecording, stopRecording])
 
   const togglePlayPause = useCallback(() => {
     if (audioRef.current) {
@@ -404,7 +425,8 @@ function App() {
     <div className={`flex flex-col h-screen ${darkMode ? 'bg-[#222222] text-[#e0e0e0]' : 'bg-white text-slate-900'}`}>
 
       {/* 1. MAIN HEADER (Global App Controls) */}
-      <div className="flex items-center justify-between px-6 py-3 bg-slate-900 text-white border-b border-slate-800 z-50">
+      {/* data-studio-hide: hidden during recording */}
+      <div data-studio-hide className="flex items-center justify-between px-6 py-3 bg-slate-900 text-white border-b border-slate-800 z-50">
         <div className="flex items-center gap-6">
           <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
             Score Follower
@@ -472,6 +494,15 @@ function App() {
             🚀 Publish
           </button>
 
+          {/* Record Master Button */}
+          <button
+            onClick={handleRecordMaster}
+            className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-2
+              ${isRecording ? 'bg-red-600 animate-pulse text-white' : 'bg-slate-700 hover:bg-slate-600 text-white border border-slate-600'}`}
+          >
+            {isRecording ? '🔴 Recording...' : '🎥 Record Master'}
+          </button>
+
           {/* Load Select */}
           <select
             className="bg-slate-700 text-white px-3 py-1 rounded text-sm border border-slate-600 focus:outline-none focus:border-blue-500 max-w-[150px]"
@@ -492,34 +523,36 @@ function App() {
         </div>
       </div>
 
-      {/* 2. CONTROLS (Toolbar or Island) */}
-      <ScoreControls
-        isIslandMode={isIslandMode}
-        setIsIslandMode={setIsIslandMode}
-        revealMode={revealMode}
-        setRevealMode={setRevealMode}
-        darkMode={darkMode}
-        setDarkMode={setDarkMode}
-        isLocked={isLocked}
-        setIsLocked={setIsLocked}
-        highlightNote={highlightNote}
-        setHighlightNote={setHighlightNote}
-        glowEffect={glowEffect}
-        setGlowEffect={setGlowEffect}
-        popEffect={popEffect}
-        setPopEffect={setPopEffect}
-        jumpEffect={jumpEffect}
-        setJumpEffect={setJumpEffect}
-        cursorPosition={cursorPosition}
-        setCursorPosition={setCursorPosition}
-        curtainLookahead={curtainLookahead}
-        setCurtainLookahead={setCurtainLookahead}
-        showCursor={showCursor}
-        setShowCursor={setShowCursor}
-      />
+      {/* 2. CONTROLS (Toolbar or Island) — hidden during recording */}
+      <div data-studio-hide>
+        <ScoreControls
+          isIslandMode={isIslandMode}
+          setIsIslandMode={setIsIslandMode}
+          revealMode={revealMode}
+          setRevealMode={setRevealMode}
+          darkMode={darkMode}
+          setDarkMode={setDarkMode}
+          isLocked={isLocked}
+          setIsLocked={setIsLocked}
+          highlightNote={highlightNote}
+          setHighlightNote={setHighlightNote}
+          glowEffect={glowEffect}
+          setGlowEffect={setGlowEffect}
+          popEffect={popEffect}
+          setPopEffect={setPopEffect}
+          jumpEffect={jumpEffect}
+          setJumpEffect={setJumpEffect}
+          cursorPosition={cursorPosition}
+          setCursorPosition={setCursorPosition}
+          curtainLookahead={curtainLookahead}
+          setCurtainLookahead={setCurtainLookahead}
+          showCursor={showCursor}
+          setShowCursor={setShowCursor}
+        />
+      </div>
 
       {/* 3. MAIN CONTENT */}
-      <div className="flex-1 flex overflow-hidden">
+      <div data-studio-main className="flex-1 flex overflow-hidden">
 
         {/* Score Area */}
         {/* Score Area */}
@@ -603,23 +636,25 @@ function App() {
 
       </div>
 
-      {/* WAVEFORM TIMELINE (New) */}
-      {(mode === 'RECORD' || mode === 'PLAYBACK') && audioUrl && (
-        <WaveformTimeline
-          audioUrl={audioUrl}
-          anchors={anchors}
-          beatAnchors={isLevel2Mode ? beatAnchors : []} // FIX: Pass beat anchors
-          onUpdateAnchor={upsertAnchor}
-          onUpdateBeatAnchor={upsertBeatAnchor}         // FIX: Pass update handler
-          audioRef={audioRef}
-          onSeek={(time) => {
-            if (audioRef.current) audioRef.current.currentTime = time
-          }}
-        />
-      )}
+      {/* WAVEFORM TIMELINE — hidden during recording */}
+      {
+        !isRecording && (mode === 'RECORD' || mode === 'PLAYBACK') && audioUrl && (
+          <WaveformTimeline
+            audioUrl={audioUrl}
+            anchors={anchors}
+            beatAnchors={isLevel2Mode ? beatAnchors : []} // FIX: Pass beat anchors
+            onUpdateAnchor={upsertAnchor}
+            onUpdateBeatAnchor={upsertBeatAnchor}         // FIX: Pass update handler
+            audioRef={audioRef}
+            onSeek={(time) => {
+              if (audioRef.current) audioRef.current.currentTime = time
+            }}
+          />
+        )
+      }
 
-      {/* Global Footer (Audio Player) */}
-      <footer className="bg-slate-900 border-t border-slate-800 p-3 z-50">
+      {/* Global Footer (Audio Player) — hidden during recording */}
+      <footer data-studio-hide className="bg-slate-900 border-t border-slate-800 p-3 z-50">
         <audio
           ref={audioRef} controls src={audioUrl}
           className="w-full h-8"
@@ -638,11 +673,12 @@ function App() {
       {/* Publish Modal */}
       <PublishModal
         isOpen={isPublishModalOpen}
-        onClose={() => setIsPublishModalOpen(false)}
+        onClose={() => { setIsPublishModalOpen(false); setRecordedVideo(null) }}
         onPublish={handlePublish}
         isPublishing={isPublishing}
+        videoFile={recordedVideo}
       />
-    </div>
+    </div >
   )
 }
 

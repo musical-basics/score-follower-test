@@ -12,9 +12,10 @@ interface PublishModalProps {
     onClose: () => void
     onPublish: (pieceId: string) => void
     isPublishing: boolean
+    videoFile?: File | null
 }
 
-export function PublishModal({ isOpen, onClose, onPublish, isPublishing }: PublishModalProps) {
+export function PublishModal({ isOpen, onClose, onPublish, isPublishing, videoFile }: PublishModalProps) {
     const [pieces, setPieces] = useState<{ id: string, title: string }[]>([])
     const [selectedId, setSelectedId] = useState('')
 
@@ -35,6 +36,16 @@ export function PublishModal({ isOpen, onClose, onPublish, isPublishing }: Publi
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[3000]">
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-2xl w-96">
                 <h2 className="text-lg font-bold mb-4 dark:text-white">Publish to Classroom</h2>
+
+                {videoFile && (
+                    <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-lg flex items-center gap-2">
+                        <span className="text-lg">🎬</span>
+                        <div>
+                            <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Video Ready!</p>
+                            <p className="text-xs text-emerald-600 dark:text-emerald-500">{videoFile.name} ({(videoFile.size / 1024 / 1024).toFixed(1)} MB)</p>
+                        </div>
+                    </div>
+                )}
 
                 <label className="block text-sm font-medium mb-2 dark:text-slate-300">
                     Select Target Piece:

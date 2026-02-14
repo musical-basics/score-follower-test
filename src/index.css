@@ -1,1 +1,27 @@
 @import "tailwindcss";
+
+/* ============================================
+   Studio Mode: Hides everything except the score
+   for clean video recording.
+   ============================================ */
+body.studio-mode [data-studio-hide] {
+    display: none !important;
+}
+
+body.studio-mode #root {
+    background: white !important;
+}
+
+/* Score area fills the entire viewport */
+body.studio-mode [data-studio-main] {
+    width: 100vw !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+    flex: none !important;
+}
+
+/* Remove any flex siblings from taking space */
+body.studio-mode [data-studio-main]>div {
+    width: 100% !important;
+    height: 100% !important;
+}
