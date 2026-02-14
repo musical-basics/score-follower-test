@@ -223,14 +223,33 @@ function App() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handlePublish = async (pieceId: string) => {
-    if (!audioFile) {
+    // FIX: If we have a URL but no File object (because we loaded a saved project),
+    // we need to re-fetch the blob to create a file for upload.
+    let fileToUpload = audioFile
+
+    if (!fileToUpload && audioUrl) {
+      setIsPublishing(true)
+      try {
+        console.log("Fetching audio blob from URL...")
+        const response = await fetch(audioUrl)
+        const blob = await response.blob()
+        fileToUpload = new File([blob], "master_recording.mp3", { type: "audio/mp3" })
+      } catch (err) {
+        console.error("Failed to fetch audio from URL", err)
+        alert("Could not prepare audio for upload. Please re-upload the MP3 manually.")
+        setIsPublishing(false)
+        return
+      }
+    }
+
+    if (!fileToUpload) {
       alert("No audio file loaded! You need a master recording.")
       return
     }
 
     setIsPublishing(true)
     try {
-      await projectService.publishToPiece(pieceId, audioFile, {
+      await projectService.publishToPiece(pieceId, fileToUpload, {
         anchors: anchors,
         beat_anchors: beatAnchors,
         subdivision: subdivision,
