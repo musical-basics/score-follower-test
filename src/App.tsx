@@ -199,6 +199,25 @@ function App() {
     }
   }
 
+  const handleNewProject = useCallback(() => {
+    if (!confirm('Create a new empty project? Unsaved changes will be lost.')) return
+    setAudioFile(null)
+    setXmlFile(null)
+    setAudioUrl(DEFAULT_AUDIO)
+    setXmlUrl(undefined)
+    setAnchors(INITIAL_ANCHORS)
+    setBeatAnchors([])
+    setSubdivision(4)
+    setIsLevel2Mode(false)
+    setCurrentProjectId(null)
+    setCurrentProjectTitle(null)
+    setMode('RECORD')
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0
+    }
+    localStorage.removeItem('lastProjectId')
+  }, [])
+
   const upsertAnchor = (measure: number, time: number) => {
     setAnchors(prev => {
       const filtered = prev.filter(a => a.measure !== measure)
@@ -366,6 +385,14 @@ function App() {
             onChange={handleXmlSelect}
             className="hidden"
           />
+
+          {/* New Project Button */}
+          <button
+            onClick={handleNewProject}
+            className="px-3 py-1.5 bg-slate-700 hover:bg-cyan-600 rounded text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-600"
+          >
+            ✨ New
+          </button>
 
           {/* Load/Save Group */}
           <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
