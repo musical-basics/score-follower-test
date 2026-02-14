@@ -8,10 +8,16 @@ if (!supabaseUrl || !supabaseKey) {
     console.warn('Supabase URL or Key missing. Save/Load features will not work.')
 }
 
-// Prevent crash by providing placeholder values if missing
+// 1. The Workbench Client (Your existing one)
 export const supabase = createClient(
     supabaseUrl || 'https://placeholder.supabase.co',
     supabaseKey || 'placeholder-key'
+)
+
+// 2. The Bridge Client (Connects to Piano Studio)
+export const pianoStudioClient = createClient(
+    import.meta.env.VITE_PIANO_STUDIO_URL || 'https://placeholder.supabase.co',
+    import.meta.env.VITE_PIANO_STUDIO_KEY || 'placeholder-key'
 )
 
 // Function to clean filename for storage
@@ -146,5 +152,46 @@ export const projectService = {
             return null
         }
         return data
+    },
+
+    /**
+     * PUBLISH TO PIANO STUDIO
+     * Uses the 'pianoStudioClient' to send data to the main app.
+     */
+    async publishToPiece(pieceId: string, audioFile: File, projectData: any) {
+        console.log(`[Publish] Uploading Master Audio to Piano Studio...`)
+
+        // A. Upload Audio to PIANO STUDIO's Storage (not Score Follower's)
+        // We use the bridge client so the file lives in the main app's bucket
+        const timestamp = Date.now()
+        const fileName = `${timestamp}_master_${audioFile.name.replace(/[^a-z0-9.]/gi, '_')}`
+
+        const { error: uploadError } = await pianoStudioClient.storage
+            .from('scores') // Make sure this bucket exists in Piano Studio!
+            .upload(fileName, audioFile)
+
+        if (uploadError) throw uploadError
+
+        const { data: { publicUrl: audioUrl } } = pianoStudioClient.storage
+            .from('scores')
+            .getPublicUrl(fileName)
+
+        console.log('[Publish] Syncing Data to Piano Studio DB...')
+
+        // B. Update the 'pieces' table in PIANO STUDIO
+        const { error } = await pianoStudioClient
+            .from('pieces')
+            .update({
+                reference_audio_url: audioUrl,
+                reference_anchors: projectData.anchors,
+                reference_beat_anchors: projectData.beat_anchors || [],
+                reference_subdivision: projectData.subdivision ?? 4,
+                reference_is_level2: projectData.is_level2 ?? false
+            })
+            .eq('id', pieceId)
+
+        if (error) throw error
+
+        return { success: true }
     }
 }
