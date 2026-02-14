@@ -4,7 +4,8 @@ import './App.css'
 import { ScrollView, type BeatAnchor } from './components/views/ScrollView'
 import { ScoreControls } from './components/controls/ScoreControls'
 import { AnchorSidebar } from './components/controls/AnchorSidebar'
-import { WaveformTimeline } from './components/controls/WaveformTimeline' // NEW
+import { WaveformTimeline } from './components/controls/WaveformTimeline'
+import { PublishModal } from './components/controls/PublishModal'
 import { projectService, type Project } from './services/projectService'
 export interface Anchor {
   measure: number
@@ -39,6 +40,8 @@ function App() {
   const [currentProjectTitle, setCurrentProjectTitle] = useState<string | null>(null)
   const [_isSaveModalOpen, setIsSaveModalOpen] = useState(false)
   const [_isLoadModalOpen, setIsLoadModalOpen] = useState(false)
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false)
+  const [isPublishing, setIsPublishing] = useState(false)
 
   // File State
   const [audioFile, setAudioFile] = useState<File | null>(null)
@@ -217,6 +220,31 @@ function App() {
     }
     localStorage.removeItem('lastProjectId')
   }, [])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handlePublish = async (pieceId: string) => {
+    if (!audioFile) {
+      alert("No audio file loaded! You need a master recording.")
+      return
+    }
+
+    setIsPublishing(true)
+    try {
+      await projectService.publishToPiece(pieceId, audioFile, {
+        anchors: anchors,
+        beat_anchors: beatAnchors,
+        subdivision: subdivision,
+        is_level2: isLevel2Mode
+      })
+      alert("✅ Successfully Published to Classroom!")
+      setIsPublishModalOpen(false)
+    } catch (e: any) {
+      alert("Error publishing: " + e.message)
+      console.error(e)
+    } finally {
+      setIsPublishing(false)
+    }
+  }
 
   const upsertAnchor = (measure: number, time: number) => {
     setAnchors(prev => {
@@ -417,6 +445,14 @@ function App() {
             </button>
           </div>
 
+          {/* Publish Button */}
+          <button
+            onClick={() => setIsPublishModalOpen(true)}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-bold transition-all ml-1 border border-emerald-500 shadow-lg shadow-emerald-900/20"
+          >
+            🚀 Publish
+          </button>
+
           {/* Load Select */}
           <select
             className="bg-slate-700 text-white px-3 py-1 rounded text-sm border border-slate-600 focus:outline-none focus:border-blue-500 max-w-[150px]"
@@ -579,6 +615,14 @@ function App() {
           onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} // NEW: Capture duration
         />
       </footer>
+
+      {/* Publish Modal */}
+      <PublishModal
+        isOpen={isPublishModalOpen}
+        onClose={() => setIsPublishModalOpen(false)}
+        onPublish={handlePublish}
+        isPublishing={isPublishing}
+      />
     </div>
   )
 }
