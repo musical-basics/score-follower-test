@@ -257,7 +257,7 @@ function App() {
         beat_anchors: beatAnchors,
         subdivision: subdivision,
         is_level2: isLevel2Mode
-      })
+      }, recordedVideo)
       alert("✅ Successfully Published to Classroom!")
       setIsPublishModalOpen(false)
     } catch (e: any) {

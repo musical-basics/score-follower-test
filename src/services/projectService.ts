@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 
 // Initialize client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -20,9 +21,44 @@ export const pianoStudioClient = createClient(
     import.meta.env.VITE_PIANO_STUDIO_KEY || 'placeholder-key'
 )
 
+// 3. Cloudflare R2 Client (S3-compatible storage for media)
+const r2AccountId = import.meta.env.VITE_R2_ACCOUNT_ID || ''
+const r2Client = new S3Client({
+    region: 'auto',
+    endpoint: r2AccountId ? `https://${r2AccountId}.r2.cloudflarestorage.com` : undefined,
+    credentials: {
+        accessKeyId: import.meta.env.VITE_R2_ACCESS_KEY_ID || '',
+        secretAccessKey: import.meta.env.VITE_R2_SECRET_ACCESS_KEY || '',
+    },
+})
+const R2_BUCKET = import.meta.env.VITE_R2_BUCKET_NAME || 'master-performances'
+const R2_PUBLIC_DOMAIN = import.meta.env.VITE_R2_PUBLIC_DOMAIN || ''
+
 // Function to clean filename for storage
 const cleanFileName = (fileName: string) => {
     return fileName.replace(/[^a-zA-Z0-9.-]/g, '_')
+}
+
+/**
+ * Upload a file to Cloudflare R2.
+ * @param file - The file to upload
+ * @param folder - Subfolder in the bucket (e.g. 'audio', 'video')
+ * @returns The full public URL of the uploaded file
+ */
+async function uploadToR2(file: File, folder: string): Promise<string> {
+    const cleanName = cleanFileName(file.name)
+    const key = `${folder}/${Date.now()}_${cleanName}`
+
+    const arrayBuffer = await file.arrayBuffer()
+
+    await r2Client.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+        Body: new Uint8Array(arrayBuffer),
+        ContentType: file.type,
+    }))
+
+    return `${R2_PUBLIC_DOMAIN}/${key}`
 }
 
 export interface Project {
@@ -156,38 +192,39 @@ export const projectService = {
 
     /**
      * PUBLISH TO PIANO STUDIO
-     * Uses the 'pianoStudioClient' to send data to the main app.
+     * Uploads media to Cloudflare R2, then updates the Piano Studio DB.
      */
-    async publishToPiece(pieceId: string, audioFile: File, projectData: any) {
-        console.log(`[Publish] Uploading Master Audio to Piano Studio...`)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async publishToPiece(pieceId: string, audioFile: File, projectData: any, videoFile?: File | null) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updatePayload: any = {
+            reference_anchors: projectData.anchors,
+            reference_beat_anchors: projectData.beat_anchors || [],
+            reference_subdivision: projectData.subdivision ?? 4,
+            reference_is_level2: projectData.is_level2 ?? false
+        }
 
-        // A. Upload Audio to PIANO STUDIO's Storage (not Score Follower's)
-        // We use the bridge client so the file lives in the main app's bucket
-        const timestamp = Date.now()
-        const fileName = `${timestamp}_master_${audioFile.name.replace(/[^a-z0-9.]/gi, '_')}`
+        // A. Upload Audio to R2
+        if (audioFile) {
+            console.log('[Publish] Uploading Master Audio to R2...')
+            const audioUrl = await uploadToR2(audioFile, 'audio')
+            updatePayload.reference_audio_url = audioUrl
+            console.log('[Publish] Audio uploaded:', audioUrl)
+        }
 
-        const { error: uploadError } = await pianoStudioClient.storage
-            .from('scores') // Make sure this bucket exists in Piano Studio!
-            .upload(fileName, audioFile)
+        // B. Upload Video to R2 (if recorded)
+        if (videoFile) {
+            console.log('[Publish] Uploading Master Video to R2...')
+            const videoUrl = await uploadToR2(videoFile, 'video')
+            updatePayload.reference_video_url = videoUrl
+            console.log('[Publish] Video uploaded:', videoUrl)
+        }
 
-        if (uploadError) throw uploadError
-
-        const { data: { publicUrl: audioUrl } } = pianoStudioClient.storage
-            .from('scores')
-            .getPublicUrl(fileName)
-
+        // C. Update the 'pieces' table in PIANO STUDIO
         console.log('[Publish] Syncing Data to Piano Studio DB...')
-
-        // B. Update the 'pieces' table in PIANO STUDIO
         const { error } = await pianoStudioClient
             .from('pieces')
-            .update({
-                reference_audio_url: audioUrl,
-                reference_anchors: projectData.anchors,
-                reference_beat_anchors: projectData.beat_anchors || [],
-                reference_subdivision: projectData.subdivision ?? 4,
-                reference_is_level2: projectData.is_level2 ?? false
-            })
+            .update(updatePayload)
             .eq('id', pieceId)
 
         if (error) throw error
