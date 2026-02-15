@@ -38,11 +38,26 @@ export function PublishModal({ isOpen, onClose, onPublish, isPublishing, videoFi
                 <h2 className="text-lg font-bold mb-4 dark:text-white">Publish to Classroom</h2>
 
                 {videoFile && (
-                    <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-lg flex items-center gap-2">
-                        <span className="text-lg">🎬</span>
-                        <div>
-                            <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Video Ready!</p>
-                            <p className="text-xs text-emerald-600 dark:text-emerald-500">{videoFile.name} ({(videoFile.size / 1024 / 1024).toFixed(1)} MB)</p>
+                    <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                        <div className="flex items-center gap-2">
+                            <span className="text-lg">🎬</span>
+                            <div className="flex-1">
+                                <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Video Ready!</p>
+                                <p className="text-xs text-emerald-600 dark:text-emerald-500">{videoFile.name} ({(videoFile.size / 1024 / 1024).toFixed(1)} MB)</p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const url = URL.createObjectURL(videoFile)
+                                    const a = document.createElement('a')
+                                    a.href = url
+                                    a.download = videoFile.name
+                                    a.click()
+                                    URL.revokeObjectURL(url)
+                                }}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold transition-all"
+                            >
+                                💾 Download
+                            </button>
                         </div>
                     </div>
                 )}
