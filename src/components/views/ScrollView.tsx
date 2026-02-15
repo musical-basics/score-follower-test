@@ -445,6 +445,28 @@ function ScrollViewComponent({
         })
     }, [revealMode])
 
+    // === INITIAL NOTE-REVEAL VISIBILITY (after note map is built) ===
+    // When the score loads in NOTE reveal mode, immediately hide future notes
+    // to prevent a flash of all-visible notes before the animation loop catches up.
+    useEffect(() => {
+        if (isLoaded && revealMode === 'NOTE' && measureContentMap.current.size > 0) {
+            const audioTime = audioRef.current?.currentTime ?? 0
+            // Hide ALL content first (clean slate)
+            measureContentMap.current.forEach(elements =>
+                elements.forEach(el => el.style.opacity = '0')
+            )
+            // Then reveal what should be visible based on current position
+            const { measure } = findCurrentPosition(audioTime)
+            measureContentMap.current.forEach((elements, measureNum) => {
+                if (measureNum < measure) {
+                    elements.forEach(el => el.style.opacity = '1')
+                }
+            })
+            // Reset last measure tracking so animation loop re-sweeps
+            lastMeasureIndexRef.current = -1
+        }
+    }, [isLoaded, revealMode, findCurrentPosition, audioRef])
+
     // === MODE SWITCHING EFFECT ===
     useEffect(() => {
         if (prevRevealModeRef.current === 'NOTE' && revealMode !== 'NOTE') {
@@ -616,7 +638,7 @@ function ScrollViewComponent({
                 }
             }
             if (revealMode === 'NOTE') {
-                if (currentMeasureIndex !== lastMeasureIndexRef.current) updateMeasureVisibility(measure)
+                if (currentMeasureIndex !== lastMeasureIndexRef.current || lastMeasureIndexRef.current === -1) updateMeasureVisibility(measure)
                 const currentElements = measureContentMap.current.get(measure)
                 if (currentElements && containerRef.current) {
                     const containerRect = containerRef.current.getBoundingClientRect()
