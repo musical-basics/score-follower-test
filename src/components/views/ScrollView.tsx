@@ -305,6 +305,11 @@ function ScrollViewComponent({
         allSymbolsRef.current = newAllSymbols
         console.timeEnd('[ScoreViewerScroll] Spatial Map Build')
 
+        // Signal that maps were rebuilt — forces animation loop to re-sweep
+        // note visibility on the next frame (prevents flash of visible notes
+        // after resize/rebuild, e.g. when recording starts and UI hides)
+        lastMeasureIndexRef.current = -1
+
     }, [onBeatMapLoaded])
 
     // We still need to trigger map calculation when loaded
